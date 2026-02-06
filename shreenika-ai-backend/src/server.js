@@ -184,9 +184,9 @@ app.use((err, req, res, next) => {
 /* =======================
    SERVER STARTUP
 ======================= */
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
-httpServer.listen(PORT, () => {
+httpServer.listen(PORT, "0.0.0.0" () => {
   console.log("╔════════════════════════════════════════╗");
   console.log("║   SHREENIKA AI - BACKEND STARTED       ║");
   console.log("╚════════════════════════════════════════╝");
