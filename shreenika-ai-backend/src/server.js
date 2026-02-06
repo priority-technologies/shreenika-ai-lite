@@ -45,7 +45,7 @@ io.on("connection", (socket) => {
 /* =======================
    MEDIA STREAM WEBSOCKET (Twilio)
 ======================= */
-createMediaStreamServer(httpServer);
+//createMediaStreamServer(httpServer);
 
 /* =======================
    CORS CONFIG (PRODUCTION)
