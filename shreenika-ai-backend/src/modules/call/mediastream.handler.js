@@ -1,0 +1,231 @@
+/**
+ * Twilio Media Stream Handler
+ *
+ * Handles WebSocket connections from Twilio Media Streams,
+ * processes audio, and bridges to Gemini Live API.
+ *
+ * Twilio Media Streams Reference: https://www.twilio.com/docs/voice/media-streams
+ */
+
+import { WebSocketServer } from 'ws';
+import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage } from './audio.converter.js';
+import { VoiceService } from './voice.service.js';
+import Call from './call.model.js';
+
+// Store active sessions
+const activeSessions = new Map();
+
+/**
+ * Handle WebSocket upgrade for Media Streams
+ * @param {http.IncomingMessage} request - HTTP request
+ * @param {net.Socket} socket - Network socket
+ * @param {Buffer} head - First packet of upgraded stream
+ * @param {http.Server} httpServer - HTTP server instance
+ */
+export const handleMediaStreamUpgrade = (request, socket, head, wss) => {
+  // Extract call SID from URL path
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  const pathParts = url.pathname.split('/');
+  const callSid = pathParts[pathParts.length - 1];
+
+  console.log(`📞 Media Stream upgrade request for call: ${callSid}`);
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request, callSid);
+  });
+};
+
+/**
+ * Create WebSocket server for Twilio Media Streams
+ * @param {http.Server} httpServer - HTTP server
+ * @returns {WebSocketServer} - WebSocket server instance
+ */
+export const createMediaStreamServer = (httpServer) => {
+  const wss = new WebSocketServer({ noServer: true });
+
+  wss.on('connection', async (ws, request, callSid) => {
+    console.log(`🔌 Twilio Media Stream connected: ${callSid}`);
+
+    let streamSid = null;
+    let voiceService = null;
+    let isClosing = false;
+
+    // Handle Twilio Media Stream messages
+    ws.on('message', async (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+
+        switch (message.event) {
+          case 'connected':
+            console.log(`📡 Media Stream connected event`);
+            break;
+
+          case 'start':
+            // Stream started - initialize voice service
+            streamSid = message.start.streamSid;
+            const twilioCallSid = message.start.callSid;
+
+            console.log(`🎙️ Stream started: ${streamSid}`);
+            console.log(`📞 Twilio Call SID: ${twilioCallSid}`);
+
+            try {
+              // Find the call and initialize voice service
+              const call = await Call.findOne({ twilioCallSid });
+
+              if (!call) {
+                console.error(`❌ Call not found for SID: ${twilioCallSid}`);
+                ws.close();
+                return;
+              }
+
+              voiceService = new VoiceService(call._id, call.agentId);
+
+              // Set up event handlers
+              voiceService.on('audio', (audioBuffer) => {
+                // Convert Gemini audio to Twilio format and send
+                const base64Audio = geminiToTwilio(audioBuffer);
+                const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
+                ws.send(JSON.stringify(mediaMessage));
+              });
+
+              voiceService.on('text', (text, role) => {
+                console.log(`💬 [${role}]: ${text}`);
+              });
+
+              voiceService.on('error', (error) => {
+                console.error(`❌ Voice service error:`, error.message);
+              });
+
+              voiceService.on('close', () => {
+                console.log(`🔌 Voice service closed`);
+                if (!isClosing) {
+                  isClosing = true;
+                  ws.close();
+                }
+              });
+
+              // Initialize the voice service (connects to Gemini)
+              await voiceService.initialize();
+
+              // Store session
+              activeSessions.set(callSid, {
+                streamSid,
+                voiceService,
+                ws,
+                startTime: Date.now()
+              });
+
+              console.log(`✅ Voice service initialized for call: ${call._id}`);
+
+            } catch (error) {
+              console.error(`❌ Failed to initialize voice service:`, error.message);
+              ws.close();
+            }
+            break;
+
+          case 'media':
+            // Audio data from caller
+            if (voiceService && message.media && message.media.payload) {
+              // Convert Twilio audio to Gemini format
+              const pcmBuffer = twilioToGemini(message.media.payload);
+
+              // Send to Gemini Live
+              voiceService.sendAudio(pcmBuffer);
+            }
+            break;
+
+          case 'mark':
+            // Mark event (used for tracking playback)
+            console.log(`🏷️ Mark received: ${message.mark?.name}`);
+            break;
+
+          case 'stop':
+            // Stream stopping
+            console.log(`🛑 Stream stopping`);
+            break;
+
+          default:
+            console.log(`📨 Unknown event: ${message.event}`);
+        }
+
+      } catch (error) {
+        console.error(`❌ Error processing message:`, error.message);
+      }
+    });
+
+    // Handle WebSocket close
+    ws.on('close', async () => {
+      console.log(`🔌 Twilio Media Stream disconnected: ${callSid}`);
+
+      if (voiceService) {
+        await voiceService.close();
+      }
+
+      activeSessions.delete(callSid);
+      isClosing = true;
+    });
+
+    // Handle WebSocket errors
+    ws.on('error', (error) => {
+      console.error(`❌ Twilio WebSocket error:`, error.message);
+    });
+  });
+
+  // Handle upgrade requests from HTTP server
+  httpServer.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+
+    if (pathname.startsWith('/media-stream/')) {
+      handleMediaStreamUpgrade(request, socket, head, wss);
+    }
+    // Note: Socket.IO handles its own upgrades, so we only handle /media-stream
+  });
+
+  console.log('✅ Media Stream WebSocket server created');
+
+  return wss;
+};
+
+/**
+ * Get active session by call SID
+ * @param {string} callSid - Twilio call SID
+ * @returns {Object|null} - Session object or null
+ */
+export const getActiveSession = (callSid) => {
+  return activeSessions.get(callSid) || null;
+};
+
+/**
+ * Get count of active sessions
+ * @returns {number} - Number of active sessions
+ */
+export const getActiveSessionCount = () => {
+  return activeSessions.size;
+};
+
+/**
+ * Close all active sessions
+ */
+export const closeAllSessions = async () => {
+  for (const [callSid, session] of activeSessions) {
+    console.log(`🛑 Closing session: ${callSid}`);
+
+    if (session.voiceService) {
+      await session.voiceService.close();
+    }
+
+    if (session.ws) {
+      session.ws.close();
+    }
+  }
+
+  activeSessions.clear();
+};
+
+export default {
+  createMediaStreamServer,
+  handleMediaStreamUpgrade,
+  getActiveSession,
+  getActiveSessionCount,
+  closeAllSessions
+};

@@ -1,0 +1,6 @@
+nul
+.env
+.env.*
+.env
+.env.*
+node_modules
