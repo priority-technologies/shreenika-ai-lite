@@ -191,7 +191,9 @@ const App: React.FC = () => {
           onLogin={() => {
             localStorage.setItem("loginTime", Date.now().toString());
             setIsAuthenticated(true);
-            setRoute("/dashboard");
+            // Check if first-time signup → route to onboarding
+            const shouldOnboard = localStorage.getItem("forceOnboarding") === "true";
+            setRoute(shouldOnboard ? "/onboarding" : "/dashboard");
           }}
         />
       );
