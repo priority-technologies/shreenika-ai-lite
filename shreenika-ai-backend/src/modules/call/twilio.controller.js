@@ -17,6 +17,15 @@ export const startOutboundCall = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: agentId and toPhone are required" });
     }
 
+    // Normalize phone to E.164 format (Twilio requires +CountryCode format)
+    let normalizedPhone = toPhone.replace(/[\s\-\(\)\.]/g, '');
+    if (!normalizedPhone.startsWith('+')) {
+      // Default to US country code if no prefix
+      normalizedPhone = '+1' + normalizedPhone;
+    }
+
+    console.log(`📱 Phone normalized: "${toPhone}" → "${normalizedPhone}"`);
+
     // Validate required environment variables before attempting the call
     if (!process.env.TWILIO_FROM_NUMBER) {
       console.error("❌ TWILIO_FROM_NUMBER env var is not set");
@@ -37,10 +46,10 @@ export const startOutboundCall = async (req, res) => {
 
     const twilio = getTwilioClient();
 
-    console.log(`📞 Starting outbound call: to=${toPhone}, from=${process.env.TWILIO_FROM_NUMBER}, webhook=${process.env.PUBLIC_BASE_URL}/twilio/voice`);
+    console.log(`📞 Starting outbound call: to=${normalizedPhone}, from=${process.env.TWILIO_FROM_NUMBER}, webhook=${process.env.PUBLIC_BASE_URL}/twilio/voice`);
 
     const twilioCall = await twilio.calls.create({
-      to: toPhone,
+      to: normalizedPhone,
       from: process.env.TWILIO_FROM_NUMBER,
       url: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
       statusCallback: `${process.env.PUBLIC_BASE_URL}/twilio/status`,
