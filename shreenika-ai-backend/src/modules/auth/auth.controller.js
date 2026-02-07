@@ -4,7 +4,7 @@ import crypto from "crypto";
 import User from "./user.model.js";
 import Agent from "../agent/agent.model.js";
 import Subscription from "../billing/subscription.model.js";
-import { sendVerificationEmail, sendMail } from "../../utils/mailer.js";
+import { sendMail } from "../../utils/mailer.js";
 
 
 /* =========================
@@ -24,19 +24,13 @@ export const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const emailVerificationToken = crypto.randomBytes(32).toString("hex");
-
-    // ✅ FOR DEVELOPMENT: Auto-verify localhost emails
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    const autoVerify = isDevelopment && email.includes('localhost');
 
     const user = await User.create({
       email,
       name: name || email.split('@')[0],
       password: hashedPassword,
       role: "user",
-      emailVerified: autoVerify || false,
-      emailVerificationToken: autoVerify ? undefined : emailVerificationToken,
+      emailVerified: true,
       isActive: true
     });
 
@@ -83,36 +77,22 @@ export const register = async (req, res) => {
 
     console.log('✅ Default subscription created (Starter plan)');
 
-    // ✅ FOR DEVELOPMENT: Skip email verification and return token
-    if (autoVerify) {
-      const token = jwt.sign(
-        { id: user._id.toString(), role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      return res.status(201).json({
-        message: "Account created successfully",
-        token,
-        user: {
-          id: user._id.toString(),
-          email: user.email,
-          role: user.role,
-          emailVerified: true
-        }
-      });
-    }
-
-    // Send verification email for production (non-blocking)
-    try {
-      await sendVerificationEmail(user.email, emailVerificationToken);
-    } catch (emailErr) {
-      console.error("⚠️ Failed to send verification email:", emailErr.message);
-      // Don't fail registration if email sending fails
-    }
+    // ✅ Generate JWT token so user can log in immediately
+    const token = jwt.sign(
+      { id: user._id.toString(), role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     return res.status(201).json({
-      message: "Account created. Please check your email to verify your account."
+      message: "Account created successfully",
+      token,
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        role: user.role,
+        emailVerified: true
+      }
     });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
