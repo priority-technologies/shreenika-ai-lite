@@ -420,7 +420,9 @@ export const updatePlan = async (req, res) => {
       }
 
       // Pro plan - requires $20 activation fee
-      if (newPlan === 'Pro' && !subscription.activationFeePaid) {
+      // Always require payment when upgrading from a lower plan to Pro
+      // (activationFeePaid may be true from Starter's $0 fee, not Pro's $20 fee)
+      if (newPlan === 'Pro' && oldPlan !== 'Pro') {
         try {
           // Create or get Stripe customer
           let stripeCustomerId = subscription.stripeCustomerId;
