@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AgentConfig } from '../types';
-import { Bot, Phone, ArrowRight, Check } from 'lucide-react';
+import { Bot, Phone, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { addVoipProvider } from '../services/api';
 
 interface OnboardingProps {
   setAgent: (agent: AgentConfig) => void;
@@ -9,6 +10,7 @@ interface OnboardingProps {
 
 const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
   const [step, setStep] = useState(1);
+  const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState<Partial<AgentConfig>>({
     name: 'Sales Assistant',
     title: 'Lead Qualifier',
@@ -20,16 +22,42 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
     voipSid: ''
   });
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 2) {
-      // Finalize
+      // Validate VOIP fields
+      if (!formData.voipProvider) {
+        alert('Please select a VOIP provider.');
+        return;
+      }
+      if (!formData.voipSid || !formData.voipApiKey) {
+        alert('Please enter your VOIP credentials.');
+        return;
+      }
+
+      setIsSaving(true);
+
+      // Register VOIP provider with the backend
+      try {
+        await addVoipProvider({
+          provider: formData.voipProvider as string,
+          accountSid: formData.voipSid,
+          authToken: formData.voipApiKey,
+        });
+      } catch (err: any) {
+        console.error('Failed to register VOIP provider:', err);
+        alert('Failed to connect VOIP provider: ' + (err.message || 'Unknown error'));
+        setIsSaving(false);
+        return;
+      }
+
+      // Finalize agent
       const defaultAgent: AgentConfig = {
         name: formData.name!,
         title: formData.title!,
         gender: formData.gender,
         age: formData.age!,
         prompt: formData.prompt!,
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + formData.name, 
+        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + formData.name,
         language: 'English (US)',
         voiceId: 'Monika',
         characteristics: ['Professional', 'Helpful'],
@@ -51,6 +79,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
         knowledgeBase: []
       };
       setAgent(defaultAgent);
+      setIsSaving(false);
       navigate('/dashboard');
     } else {
       setStep(step + 1);
@@ -161,12 +190,22 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
            )}
 
            <div className="mt-8 flex justify-end">
-             <button 
+             <button
                onClick={handleNext}
-               className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors shadow-lg shadow-indigo-200"
+               disabled={isSaving}
+               className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-8 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors shadow-lg shadow-indigo-200"
              >
-               <span>{step === 2 ? 'Finish Setup' : 'Continue'}</span>
-               {step === 2 ? <Check className="w-5 h-5"/> : <ArrowRight className="w-5 h-5" />}
+               {isSaving ? (
+                 <>
+                   <Loader2 className="w-5 h-5 animate-spin" />
+                   <span>Connecting...</span>
+                 </>
+               ) : (
+                 <>
+                   <span>{step === 2 ? 'Finish Setup' : 'Continue'}</span>
+                   {step === 2 ? <Check className="w-5 h-5"/> : <ArrowRight className="w-5 h-5" />}
+                 </>
+               )}
              </button>
            </div>
         </div>
