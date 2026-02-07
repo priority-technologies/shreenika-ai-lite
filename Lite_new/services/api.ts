@@ -3,10 +3,10 @@
 // ==============================
 
 // Auth server (login, google oauth, token issuing)
-const AUTH_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const AUTH_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
 
 // Core API server (agents, calls, contacts, billing)
-const CORE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const CORE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
 
 // ==============================
 // GENERIC API FETCH
@@ -224,4 +224,21 @@ export const suspendUser = (userId: string) =>
 export const activateUser = (userId: string) =>
   apiFetch(`/admin/users/${userId}/activate`, {
     method: "POST",
+  }, "core");
+
+// ==============================
+// API KEY MANAGEMENT (SETTINGS)
+// ==============================
+export const generateApiKey = (name?: string) =>
+  apiFetch("/settings/api-keys", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  }, "core");
+
+export const listApiKeys = () =>
+  apiFetch("/settings/api-keys", undefined, "core");
+
+export const revokeApiKey = (id: string) =>
+  apiFetch(`/settings/api-keys/${id}`, {
+    method: "DELETE",
   }, "core");
