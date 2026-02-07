@@ -103,11 +103,16 @@ export const register = async (req, res) => {
       });
     }
 
-    // Send verification email for production
-    await sendVerificationEmail(user.email, emailVerificationToken);
+    // Send verification email for production (non-blocking)
+    try {
+      await sendVerificationEmail(user.email, emailVerificationToken);
+    } catch (emailErr) {
+      console.error("⚠️ Failed to send verification email:", emailErr.message);
+      // Don't fail registration if email sending fails
+    }
 
     return res.status(201).json({
-      message: "Account created. Please verify your email."
+      message: "Account created. Please check your email to verify your account."
     });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
