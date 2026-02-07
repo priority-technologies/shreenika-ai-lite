@@ -34,6 +34,10 @@ export default function Auth({ onLogin }: AuthProps) {
         // Both login and signup now return a token
         localStorage.setItem("token", res.token);
         localStorage.setItem("user", JSON.stringify(res.user));
+        // First-time signup → force onboarding (Agent Registration + VOIP setup)
+        if (mode === "signup") {
+          localStorage.setItem("forceOnboarding", "true");
+        }
         onLogin();
       } else {
         throw new Error("Authentication failed. Please try again.");
