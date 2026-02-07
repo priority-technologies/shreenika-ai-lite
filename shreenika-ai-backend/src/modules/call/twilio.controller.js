@@ -14,7 +14,17 @@ export const startOutboundCall = async (req, res) => {
   try {
     const { agentId, leadId, toPhone } = req.body;
     if (!toPhone || !agentId) {
-      return res.status(400).json({ error: "Missing required fields" });
+      return res.status(400).json({ error: "Missing required fields: agentId and toPhone are required" });
+    }
+
+    // Validate required environment variables before attempting the call
+    if (!process.env.TWILIO_FROM_NUMBER) {
+      console.error("❌ TWILIO_FROM_NUMBER env var is not set");
+      return res.status(500).json({ error: "Twilio phone number not configured. Set TWILIO_FROM_NUMBER env var." });
+    }
+    if (!process.env.PUBLIC_BASE_URL) {
+      console.error("❌ PUBLIC_BASE_URL env var is not set");
+      return res.status(500).json({ error: "Public webhook URL not configured. Set PUBLIC_BASE_URL env var." });
     }
 
     const call = await Call.create({
@@ -26,6 +36,8 @@ export const startOutboundCall = async (req, res) => {
     });
 
     const twilio = getTwilioClient();
+
+    console.log(`📞 Starting outbound call: to=${toPhone}, from=${process.env.TWILIO_FROM_NUMBER}, webhook=${process.env.PUBLIC_BASE_URL}/twilio/voice`);
 
     const twilioCall = await twilio.calls.create({
       to: toPhone,
@@ -39,10 +51,12 @@ export const startOutboundCall = async (req, res) => {
     call.twilioCallSid = twilioCall.sid;
     await call.save();
 
+    console.log(`✅ Call initiated: SID=${twilioCall.sid}`);
     res.json(call);
   } catch (err) {
-    console.error("Twilio outbound error:", err.message);
-    res.status(500).json({ error: "Outbound call failed" });
+    console.error("❌ Twilio outbound error:", err.message);
+    console.error("Full error:", err);
+    res.status(500).json({ error: err.message || "Outbound call failed" });
   }
 };
 
