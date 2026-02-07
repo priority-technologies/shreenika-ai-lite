@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Shield, HelpCircle, Phone, Plus, CreditCard, Lock, FileText, ArrowLeft, Loader2, CheckCircle, ChevronDown, Download, Package, Check, Zap, HardDrive, Smartphone, CheckCircle2, RefreshCw, AlertCircle } from 'lucide-react';
+import { User, Shield, HelpCircle, Phone, Plus, CreditCard, Lock, FileText, ArrowLeft, Loader2, CheckCircle, ChevronDown, Download, Package, Check, Zap, HardDrive, Smartphone, CheckCircle2, RefreshCw, AlertCircle, Key, Copy, Trash2, Eye, EyeOff, Code } from 'lucide-react';
 import { FAQ_ITEMS } from '../constants';
 import {
   getVoipProvider,
@@ -16,7 +16,10 @@ import {
   getBillingStatus,
   getCurrentUsage,
   updatePlan,
-  purchaseAddOn
+  purchaseAddOn,
+  generateApiKey,
+  listApiKeys,
+  revokeApiKey
 } from '../services/api';
 
 interface VoipNumber {
@@ -86,6 +89,14 @@ const ProfileSettings: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(false);
   const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+
+  // API Key State
+  const [apiKeys, setApiKeys] = useState<any[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [isLoadingApiKeys, setIsLoadingApiKeys] = useState(false);
+  const [isGeneratingKey, setIsGeneratingKey] = useState(false);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   // Load VOIP data on mount and when tab changes to VOIP
   useEffect(() => {
@@ -161,6 +172,71 @@ const ProfileSettings: React.FC = () => {
       setIsLoadingSubscription(false);
     }
   };
+
+  // Load API keys when API tab is active
+  useEffect(() => {
+    if (activeTab === 'API') {
+      loadApiKeys();
+    }
+  }, [activeTab]);
+
+  const loadApiKeys = async () => {
+    setIsLoadingApiKeys(true);
+    try {
+      const keys = await listApiKeys();
+      setApiKeys(Array.isArray(keys) ? keys : []);
+    } catch (error: any) {
+      console.error('Failed to load API keys:', error);
+    } finally {
+      setIsLoadingApiKeys(false);
+    }
+  };
+
+  const handleGenerateKey = async () => {
+    setIsGeneratingKey(true);
+    try {
+      const result = await generateApiKey(newKeyName || undefined);
+      setGeneratedKey(result.key);
+      setNewKeyName('');
+      await loadApiKeys();
+    } catch (error: any) {
+      alert(error.message || 'Failed to generate API key');
+    } finally {
+      setIsGeneratingKey(false);
+    }
+  };
+
+  const handleRevokeKey = async (id: string) => {
+    if (!window.confirm('Are you sure you want to revoke this API key? Any integrations using it will stop working.')) return;
+    try {
+      await revokeApiKey(id);
+      await loadApiKeys();
+    } catch (error: any) {
+      alert(error.message || 'Failed to revoke API key');
+    }
+  };
+
+  const handleCopyKey = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setKeyCopied(true);
+    setTimeout(() => setKeyCopied(false), 2000);
+  };
+
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+
+  const apiEndpoints = [
+    { method: 'GET', path: '/api/v1/agents', desc: 'List all agents' },
+    { method: 'GET', path: '/api/v1/agents/:id', desc: 'Get agent by ID' },
+    { method: 'POST', path: '/api/v1/calls/outbound', desc: 'Make outbound call' },
+    { method: 'GET', path: '/api/v1/calls', desc: 'List call history' },
+    { method: 'GET', path: '/api/v1/contacts', desc: 'List contacts' },
+    { method: 'POST', path: '/api/v1/contacts', desc: 'Create contact' },
+    { method: 'PUT', path: '/api/v1/contacts/:id', desc: 'Update contact' },
+    { method: 'DELETE', path: '/api/v1/contacts/:id', desc: 'Delete contact' },
+    { method: 'GET', path: '/api/v1/knowledge', desc: 'List knowledge docs' },
+    { method: 'GET', path: '/api/v1/usage', desc: 'Get usage stats' },
+    { method: 'GET', path: '/api/v1/billing', desc: 'Get billing status' },
+  ];
 
   const calculateSubscriptionTotal = () => {
     const plan = plans.find(p => p.id === selectedPlan);
@@ -315,6 +391,7 @@ const ProfileSettings: React.FC = () => {
               { id: 'Profile', icon: User, label: 'My Profile' },
               { id: 'VOIP', icon: Phone, label: 'VOIP Integration' },
               { id: 'Subscription', icon: CreditCard, label: 'Subscription Plan' },
+              { id: 'API', icon: Key, label: 'API Integration' },
               { id: 'Legal', icon: Shield, label: 'Privacy & Terms' },
               { id: 'FAQ', icon: HelpCircle, label: 'FAQs' },
            ].map(tab => (
@@ -837,6 +914,185 @@ const ProfileSettings: React.FC = () => {
                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : <Shield className="w-5 h-5 mr-2" />}
                        {selectedPlan === 'Enterprise' ? 'Contact Sales' : 'Confirm Changes'}
                     </button>
+                 </div>
+              </div>
+           )}
+
+           {/* --- API INTEGRATION --- */}
+           {activeTab === 'API' && (
+              <div className="animate-fadeIn space-y-8">
+                 <div>
+                    <h2 className="text-xl font-bold text-slate-900 border-b border-slate-100 pb-4">API Integration</h2>
+                    <p className="text-slate-500 mt-4">Connect your CRM, ERP, or any external system using REST APIs.</p>
+                 </div>
+
+                 {/* Generate New Key */}
+                 <div className="bg-white border border-slate-200 rounded-xl p-6">
+                    <h3 className="text-base font-bold text-slate-900 mb-4 flex items-center">
+                       <Key className="w-5 h-5 mr-2 text-blue-600" />
+                       Generate API Key
+                    </h3>
+                    <div className="flex space-x-3">
+                       <input
+                          type="text"
+                          value={newKeyName}
+                          onChange={(e) => setNewKeyName(e.target.value)}
+                          placeholder="Key name (e.g., My CRM Integration)"
+                          className="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                       />
+                       <button
+                          onClick={handleGenerateKey}
+                          disabled={isGeneratingKey}
+                          className="bg-blue-600 text-white px-6 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                       >
+                          {isGeneratingKey ? (
+                             <><Loader2 className="w-4 h-4 animate-spin mr-2" />Generating...</>
+                          ) : (
+                             <><Plus className="w-4 h-4 mr-2" />Generate Key</>
+                          )}
+                       </button>
+                    </div>
+
+                    {/* Newly Generated Key (shown once) */}
+                    {generatedKey && (
+                       <div className="mt-4 bg-green-50 border border-green-200 rounded-lg p-4">
+                          <div className="flex items-start space-x-3">
+                             <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+                             <div className="flex-1">
+                                <p className="text-sm font-bold text-green-900 mb-2">API Key Generated Successfully</p>
+                                <p className="text-xs text-green-700 mb-3">Copy this key now. It will not be shown again.</p>
+                                <div className="flex items-center space-x-2">
+                                   <code className="flex-1 bg-white border border-green-300 rounded px-3 py-2 text-xs font-mono text-slate-800 break-all">
+                                      {generatedKey}
+                                   </code>
+                                   <button
+                                      onClick={() => handleCopyKey(generatedKey)}
+                                      className="bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-green-700 flex items-center shrink-0"
+                                   >
+                                      {keyCopied ? <><Check className="w-3 h-3 mr-1" />Copied</> : <><Copy className="w-3 h-3 mr-1" />Copy</>}
+                                   </button>
+                                </div>
+                             </div>
+                          </div>
+                       </div>
+                    )}
+                 </div>
+
+                 {/* Active API Keys */}
+                 <div className="bg-white border border-slate-200 rounded-xl p-6">
+                    <h3 className="text-base font-bold text-slate-900 mb-4">Your API Keys</h3>
+                    {isLoadingApiKeys ? (
+                       <div className="flex items-center justify-center py-8">
+                          <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                          <span className="ml-3 text-slate-500 text-sm">Loading keys...</span>
+                       </div>
+                    ) : apiKeys.length === 0 ? (
+                       <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-lg">
+                          <Key className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                          <p className="text-slate-500 text-sm">No API keys yet. Generate one to get started.</p>
+                       </div>
+                    ) : (
+                       <div className="space-y-3">
+                          {apiKeys.map((key: any) => (
+                             <div
+                                key={key._id}
+                                className={`flex items-center justify-between p-4 rounded-lg border ${
+                                   key.isActive ? 'border-slate-200 bg-white' : 'border-slate-100 bg-slate-50 opacity-60'
+                                }`}
+                             >
+                                <div>
+                                   <div className="flex items-center space-x-2">
+                                      <span className="text-sm font-bold text-slate-900">{key.name}</span>
+                                      {!key.isActive && (
+                                         <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded">Revoked</span>
+                                      )}
+                                   </div>
+                                   <code className="text-xs text-slate-500 font-mono mt-1 block">{key.prefix}...••••••••</code>
+                                   <p className="text-xs text-slate-400 mt-1">
+                                      Created {new Date(key.createdAt).toLocaleDateString()}
+                                      {key.lastUsedAt && ` • Last used ${new Date(key.lastUsedAt).toLocaleDateString()}`}
+                                   </p>
+                                </div>
+                                {key.isActive && (
+                                   <button
+                                      onClick={() => handleRevokeKey(key._id)}
+                                      className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg"
+                                      title="Revoke Key"
+                                   >
+                                      <Trash2 className="w-4 h-4" />
+                                   </button>
+                                )}
+                             </div>
+                          ))}
+                       </div>
+                    )}
+                 </div>
+
+                 {/* API Endpoints Reference */}
+                 <div className="bg-white border border-slate-200 rounded-xl p-6">
+                    <h3 className="text-base font-bold text-slate-900 mb-2 flex items-center">
+                       <Code className="w-5 h-5 mr-2 text-indigo-600" />
+                       API Endpoints
+                    </h3>
+                    <p className="text-sm text-slate-500 mb-4">
+                       Base URL: <code className="bg-slate-100 px-2 py-0.5 rounded text-xs font-mono text-slate-700">{API_BASE}</code>
+                    </p>
+
+                    <div className="bg-slate-50 rounded-lg p-4 mb-4">
+                       <p className="text-xs text-slate-600 mb-2 font-medium">Authentication Header:</p>
+                       <code className="text-xs font-mono text-slate-800 bg-white px-3 py-1.5 rounded border border-slate-200 block">
+                          x-api-key: sk_live_your_api_key_here
+                       </code>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                       <table className="min-w-full divide-y divide-slate-200">
+                          <thead className="bg-slate-50">
+                             <tr>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500 uppercase">Method</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500 uppercase">Endpoint</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-medium text-slate-500 uppercase">Description</th>
+                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                             {apiEndpoints.map((ep, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50">
+                                   <td className="px-4 py-2.5">
+                                      <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                         ep.method === 'GET' ? 'bg-green-100 text-green-700' :
+                                         ep.method === 'POST' ? 'bg-blue-100 text-blue-700' :
+                                         ep.method === 'PUT' ? 'bg-yellow-100 text-yellow-700' :
+                                         'bg-red-100 text-red-700'
+                                      }`}>
+                                         {ep.method}
+                                      </span>
+                                   </td>
+                                   <td className="px-4 py-2.5">
+                                      <code className="text-xs font-mono text-slate-700">{ep.path}</code>
+                                   </td>
+                                   <td className="px-4 py-2.5 text-xs text-slate-600">{ep.desc}</td>
+                                </tr>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
+
+                    {/* Example Request */}
+                    <div className="mt-4">
+                       <p className="text-xs text-slate-600 mb-2 font-medium">Example: Create a contact from your CRM</p>
+                       <div className="bg-slate-900 rounded-lg p-4 overflow-x-auto">
+                          <pre className="text-xs text-green-400 font-mono whitespace-pre">{`curl -X POST ${API_BASE}/api/v1/contacts \\
+  -H "x-api-key: sk_live_your_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "company": { "name": "Acme Inc" }
+  }'`}</pre>
+                       </div>
+                    </div>
                  </div>
               </div>
            )}
