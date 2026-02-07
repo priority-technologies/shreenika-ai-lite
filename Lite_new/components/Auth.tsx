@@ -30,31 +30,26 @@ export default function Auth({ onLogin }: AuthProps) {
         body: JSON.stringify({ email, password }),
       });
 
-      if (!res.token && mode === "login") {
-        throw new Error("Token missing");
-      }
-
-      if (mode === "login") {
+      if (res.token) {
+        // Both login and signup now return a token
         localStorage.setItem("token", res.token);
         localStorage.setItem("user", JSON.stringify(res.user));
-
-        // Verify token was saved (use same key as above)
-        const savedToken = localStorage.getItem('token');
-        console.log('✅ Token saved:', savedToken ? 'Success' : '❌ FAILED');
-        if (!savedToken) {
-          console.error('❌ CRITICAL: Token save failed!');
-          alert('Login successful but session storage failed. Please try again.');
-          return;
-        }
-
         onLogin();
+      } else {
+        throw new Error("Authentication failed. Please try again.");
       }
-    } catch {
-      setError(
-        mode === "login"
-          ? "Invalid email or password"
-          : "Unable to create account"
-      );
+    } catch (err: any) {
+      // Show the actual error message from the backend
+      const message = err?.message || "";
+      if (message.includes("User already exists")) {
+        setError("An account with this email already exists. Try signing in.");
+      } else if (message.includes("Invalid credentials")) {
+        setError("Invalid email or password.");
+      } else if (message.includes("Email not verified")) {
+        setError("Please verify your email before logging in.");
+      } else {
+        setError(message || (mode === "login" ? "Invalid email or password" : "Unable to create account. Please try again."));
+      }
     } finally {
       setLoading(false);
     }
@@ -64,7 +59,8 @@ export default function Auth({ onLogin }: AuthProps) {
      GOOGLE LOGIN (ADDED)
   ========================= */
   const handleGoogleLogin = () => {
-    window.location.href = "https://shreenika-ai-backend-507468019722.asia-south1.run.app/auth/google";
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+    window.location.href = `${apiBase}/auth/google`;
   };
 
   return (
