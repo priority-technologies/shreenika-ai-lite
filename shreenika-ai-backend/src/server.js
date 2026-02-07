@@ -19,6 +19,8 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import contactRoutes from "./modules/contacts/contact.routes.js";
 import voipRoutes from "./modules/voip/voip.routes.js";
+import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
+import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
 
 /* =======================
@@ -154,6 +156,8 @@ app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
 app.use("/api/agents", agentRoutes);
+app.use("/settings/api-keys", apiKeyRoutes);
+app.use("/api/v1", apiV1Routes);
 
 /* =======================
    ERROR HANDLING
