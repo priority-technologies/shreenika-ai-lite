@@ -64,7 +64,7 @@ export default function Auth({ onLogin }: AuthProps) {
      GOOGLE LOGIN (ADDED)
   ========================= */
   const handleGoogleLogin = () => {
-    window.location.href = "http://localhost:5000/auth/google";
+    window.location.href = "https://shreenika-ai-backend-507468019722.asia-south1.run.app/auth/google";
   };
 
   return (
