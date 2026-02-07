@@ -61,7 +61,7 @@ interface Agent {
 const ProfileSettings: React.FC = () => {
   const [activeTab, setActiveTab] = useState('Profile');
   const [user] = useState(() => {
-     const u = localStorage.getItem('voxai_user');
+     const u = localStorage.getItem('user');
      return u ? JSON.parse(u) : { name: 'User', email: 'user@example.com', role: 'user' };
   });
 
