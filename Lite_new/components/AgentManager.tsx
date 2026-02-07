@@ -206,7 +206,7 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
   // ========== BACKEND-WIRED ADD AGENT ==========
   const handleAddAgent = async () => {
   // Check authentication first
-  const token = localStorage.getItem('voxai_token');
+  const token = localStorage.getItem('token') || localStorage.getItem('voxai_token');
   if (!token) {
     alert('Please log in again to create agents.');
     navigate('/login');
