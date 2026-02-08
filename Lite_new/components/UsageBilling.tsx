@@ -114,9 +114,9 @@ const UsageBilling: React.FC = () => {
   // Calculate current month cost from usage
   const calculateCurrentMonthCost = () => {
     if (!usage) return 0;
-    // Using pricing: Outbound ₹1.40/min, Inbound ₹1.20/min
+    // Pricing: Outbound $0.015/min, Inbound $0.013/min
     // For simplicity, assuming all voice minutes are outbound
-    return usage.voiceMinutes * 1.40;
+    return usage.voiceMinutes * 0.015;
   };
 
   // Calculate total for subscription modal
@@ -291,7 +291,7 @@ const UsageBilling: React.FC = () => {
                {/* Month-to-date */}
                <div>
                   <p className="text-sm font-medium text-slate-600 mb-1">Month-to-date cost</p>
-                  <h3 className="text-3xl font-bold text-blue-600 mb-2">₹{currentMonthCost.toFixed(2)}</h3>
+                  <h3 className="text-3xl font-bold text-blue-600 mb-2">${currentMonthCost.toFixed(2)}</h3>
                   <div className="flex items-center text-xs text-slate-500">
                      <span className="font-medium text-slate-900">{usage?.voiceMinutes || 0} minutes used</span>
                   </div>
@@ -301,7 +301,7 @@ const UsageBilling: React.FC = () => {
                <div className="border-l border-slate-100 pl-6 md:pl-8">
                   <p className="text-sm font-medium text-slate-600 mb-1">Last month's total cost</p>
                   <h3 className="text-2xl font-bold text-blue-500 mb-2">
-                    ₹{lastMonthInvoice ? lastMonthInvoice.totalAmount.toFixed(2) : '0.00'}
+                    ${lastMonthInvoice ? lastMonthInvoice.totalAmount.toFixed(2) : '0.00'}
                   </h3>
                   <p className="text-xs text-slate-400">
                     {lastMonthInvoice ? formatMonth(lastMonthInvoice.month) : 'No data'}
@@ -358,8 +358,8 @@ const UsageBilling: React.FC = () => {
                  <ul className="space-y-1 text-xs text-slate-700">
                    <li>• {usage?.limits.agents || 1} Agent(s)</li>
                    <li>• {usage?.limits.docs || 0} Documents</li>
-                   <li>• ₹1.40/min outbound calls</li>
-                   <li>• ₹1.20/min inbound calls</li>
+                   <li>• $0.015/min outbound calls</li>
+                   <li>• $0.013/min inbound calls</li>
                  </ul>
                </div>
             </div>
@@ -399,9 +399,9 @@ const UsageBilling: React.FC = () => {
                   >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val: number) => `₹${val}`} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val: number) => `$${val}`} />
                     <Tooltip
-                      formatter={(value: number) => [`₹${value.toFixed(2)}`, '']}
+                      formatter={(value: number) => [`$${value.toFixed(2)}`, '']}
                       contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                       cursor={{fill: '#f8fafc'}}
                     />
@@ -443,7 +443,7 @@ const UsageBilling: React.FC = () => {
 
                   <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center mb-6">
                      <p className="text-sm font-medium text-slate-500 mb-2">This Month's Cost</p>
-                     <h3 className="text-4xl font-bold text-slate-900">₹{currentMonthCost.toFixed(2)}</h3>
+                     <h3 className="text-4xl font-bold text-slate-900">${currentMonthCost.toFixed(2)}</h3>
                      <p className="text-xs text-slate-500 mt-2 font-medium">
                        {usage?.voiceMinutes || 0} minutes used
                      </p>
@@ -453,7 +453,7 @@ const UsageBilling: React.FC = () => {
                      {invoices.slice(0, 2).map((invoice, idx) => (
                        <div key={invoice._id} className="flex justify-between text-sm text-slate-600 border-b border-slate-100 pb-2">
                           <span className="truncate">{formatMonth(invoice.month)}</span>
-                          <span className="text-slate-900 font-medium">₹{invoice.totalAmount.toFixed(2)}</span>
+                          <span className="text-slate-900 font-medium">${invoice.totalAmount.toFixed(2)}</span>
                        </div>
                      ))}
                      {invoices.length === 0 && (
@@ -617,19 +617,19 @@ const UsageBilling: React.FC = () => {
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-slate-900">{invoice.inboundMinutes} mins</div>
-                          <div className="text-xs text-slate-500">₹{invoice.inboundCost.toFixed(2)}</div>
+                          <div className="text-xs text-slate-500">${invoice.inboundCost.toFixed(2)}</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-slate-900">{invoice.outboundMinutes} mins</div>
-                          <div className="text-xs text-slate-500">₹{invoice.outboundCost.toFixed(2)}</div>
+                          <div className="text-xs text-slate-500">${invoice.outboundCost.toFixed(2)}</div>
                         </td>
-                        <td className="px-6 py-4 text-sm font-bold text-slate-900">₹{invoice.totalAmount.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-sm font-bold text-slate-900">${invoice.totalAmount.toFixed(2)}</td>
                         <td className="px-6 py-4 text-right">
                           <div className="text-xs text-slate-600 space-y-1">
-                            <div>LLM: ₹{invoice.breakdown.llm.toFixed(2)}</div>
-                            <div>STT: ₹{invoice.breakdown.stt.toFixed(2)}</div>
-                            <div>TTS: ₹{invoice.breakdown.tts.toFixed(2)}</div>
-                            <div>Infra: ₹{invoice.breakdown.infrastructure.toFixed(2)}</div>
+                            <div>LLM: ${invoice.breakdown.llm.toFixed(2)}</div>
+                            <div>STT: ${invoice.breakdown.stt.toFixed(2)}</div>
+                            <div>TTS: ${invoice.breakdown.tts.toFixed(2)}</div>
+                            <div>Infra: ${invoice.breakdown.infrastructure.toFixed(2)}</div>
                           </div>
                         </td>
                       </tr>

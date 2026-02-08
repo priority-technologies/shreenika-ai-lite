@@ -22,8 +22,9 @@ import {
   Trash2,
   Archive
 } from 'lucide-react';
-import { apiFetch } from '../services/api';
+import { apiFetch, getAgents } from '../services/api';
 import { startCall, getCalls } from '../services/api';
+import { ChevronDown } from 'lucide-react';
 interface CallManagerProps {
   leads: Lead[];
   logs: CallLog[];
@@ -55,6 +56,10 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
   // Call execution state
    const [loadingCallId, setLoadingCallId] = useState<string | null>(null);
 
+  // Agent selection for campaigns
+  const [agentsList, setAgentsList] = useState<any[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+
   const selectedLog = logs.find(l => l.id === selectedLogId) || null;
 
   const filteredLogs = logs.filter(log => 
@@ -63,20 +68,36 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
   );
 
    useEffect(() => {
-  const socket = new WebSocket("ws://localhost:5000");
+  const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+  const wsUrl = apiBase.replace(/^http/, "ws");
 
-  socket.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+  let socket: WebSocket;
+  try {
+    socket = new WebSocket(wsUrl);
 
-    if (data.type === "INCOMING_CALL") {
-      setIncomingCall({
-        phoneNumber: data.phoneNumber,
-        callId: data.callId
-      });
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "INCOMING_CALL") {
+        setIncomingCall({
+          phoneNumber: data.phoneNumber,
+          callId: data.callId
+        });
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.warn("WebSocket connection failed:", err);
+    };
+  } catch (err) {
+    console.warn("WebSocket not available:", err);
+  }
+
+  return () => {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.close();
     }
   };
-
-  return () => socket.close();
 }, []);
 
 
@@ -91,17 +112,24 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
   try {
     setLoadingCallId(lead.id);
 
+    // Normalize phone to E.164 format
+    let phone = (lead.phone || '').replace(/[\s\-\(\)]/g, '');
+    if (phone && !phone.startsWith('+')) {
+      phone = '+1' + phone; // Default to US country code
+    }
+
     await startCall({
       agentId,
       leadId: lead.id,
-      toPhone: lead.phone,
+      toPhone: phone,
     });
 
     // refresh call history (logs drive UI)
     await loadCallHistory();
 
-  } catch (err) {
+  } catch (err: any) {
     console.error("Call failed", err);
+    alert(`Call failed: ${err.message || 'Unknown error'}`);
   } finally {
     setLoadingCallId(null);
   }
@@ -111,6 +139,26 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
    phoneNumber: string;
    callId: string;
    }>(null);
+
+  /* =========================
+     LOAD AGENTS LIST
+  ========================= */
+  useEffect(() => {
+    const loadAgents = async () => {
+      try {
+        const data = await getAgents();
+        const list = Array.isArray(data) ? data : (data.agents || []);
+        setAgentsList(list);
+        // Auto-select first agent
+        if (list.length > 0 && !selectedAgentId) {
+          setSelectedAgentId(list[0]._id);
+        }
+      } catch (err) {
+        console.error('Failed to load agents:', err);
+      }
+    };
+    loadAgents();
+  }, []);
 
   /* =========================
      LOAD CALL HISTORY
@@ -842,30 +890,62 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
               </table>
            </div>
 
+           {/* Agent Selection */}
+           <div className="px-6 py-3 border-t border-slate-200 bg-white">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Agent for Campaign</label>
+              <div className="relative">
+                 <select
+                    value={selectedAgentId}
+                    onChange={(e) => setSelectedAgentId(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg p-2.5 bg-white text-sm outline-none focus:ring-2 focus:ring-indigo-500 appearance-none"
+                 >
+                    <option value="" disabled>-- Select Agent --</option>
+                    {agentsList.map((a: any) => (
+                       <option key={a._id} value={a._id}>
+                          {a.name} - {a.title}
+                       </option>
+                    ))}
+                 </select>
+                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
+           </div>
+
            <div className="p-6 border-t border-slate-200 bg-slate-50 rounded-b-xl flex justify-between items-center">
               <span className="text-sm font-medium text-slate-600">
                  {selectedLeadIds.size} leads selected
               </span>
               <div className="flex space-x-3">
-                 <button 
+                 <button
                     onClick={() => setIsLeadModalOpen(false)}
                     className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm hover:bg-white"
                  >
                     Cancel
                  </button>
-                 <button 
+                 <button
                   onClick={() => {
+                     if (!selectedAgentId) {
+                        alert('Please select an agent first.');
+                        return;
+                     }
                      campaignLeads.forEach((lead) => {
-                        handleStartCall(lead, agent.id);
+                        handleStartCall(lead, selectedAgentId);
                      });
                      }}
 
-                    disabled={selectedLeadIds.size === 0 || loadingCallId !== null}
+                    disabled={selectedLeadIds.size === 0 || loadingCallId !== null || !selectedAgentId}
                     className="px-6 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm flex items-center"
                  >
-                     {loadingCallId ? "Calling..." : "Start Auto-Dialer"}
-                    <Phone className="w-4 h-4 mr-2" />
-                    Start Auto-Dialer
+                    {loadingCallId ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Calling...
+                      </>
+                    ) : (
+                      <>
+                        <Phone className="w-4 h-4 mr-2" />
+                        Start Auto-Dialer
+                      </>
+                    )}
                  </button>
               </div>
            </div>

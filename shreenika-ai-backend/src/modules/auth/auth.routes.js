@@ -14,6 +14,11 @@ import { googleAuthCallback } from "./google.controller.js";
 const router = express.Router();
 
 /* =========================
+   CURRENT USER PROFILE
+========================= */
+router.get("/me", requireAuth, getMe);
+
+/* =========================
    EMAIL / PASSWORD AUTH
 ========================= */
 

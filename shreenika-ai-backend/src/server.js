@@ -19,13 +19,34 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import contactRoutes from "./modules/contacts/contact.routes.js";
 import voipRoutes from "./modules/voip/voip.routes.js";
+import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
+import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
 
+/* =======================
+   APP & SERVER CREATION
+======================= */
 const app = express();
 const httpServer = createServer(app);
 
 /* =======================
-   WEBSOCKET SETUP
+   SERVER STARTUP (MOVED TO TOP - CRITICAL FOR CLOUD RUN)
+======================= */
+const PORT = process.env.PORT || 8080;
+
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log("╔════════════════════════════════════════╗");
+  console.log("║   SHREENIKA AI - BACKEND STARTED       ║");
+  console.log("╚════════════════════════════════════════╝");
+  console.log(`🚀 Server: http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
+  console.log("════════════════════════════════════════");
+});
+
+/* =======================
+   WEBSOCKET SETUP (AFTER SERVER START)
 ======================= */
 export const io = new Server(httpServer, {
   cors: {
@@ -45,7 +66,7 @@ io.on("connection", (socket) => {
 /* =======================
    MEDIA STREAM WEBSOCKET (Twilio)
 ======================= */
-createMediaStreamServer(httpServer);
+//createMediaStreamServer(httpServer);
 
 /* =======================
    CORS CONFIG (PRODUCTION)
@@ -95,14 +116,15 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 /* =======================
-   DATABASE CONNECTION
+   DATABASE CONNECTION (AFTER SERVER START - NO EXIT ON FAIL)
 ======================= */
 mongoose
   .connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => {
     console.error("❌ MongoDB connection failed:", err.message);
-    process.exit(1);
+    console.log("⚠️ Server will continue running without database");
+    // DO NOT EXIT - Let server stay alive for Cloud Run health check
   });
 
 /* =======================
@@ -134,6 +156,8 @@ app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
 app.use("/api/agents", agentRoutes);
+app.use("/settings/api-keys", apiKeyRoutes);
+app.use("/api/v1", apiV1Routes);
 
 /* =======================
    ERROR HANDLING
@@ -179,22 +203,6 @@ app.use((err, req, res, next) => {
     error: err.message || "Internal server error",
     ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
   });
-});
-
-/* =======================
-   SERVER STARTUP
-======================= */
-const PORT = process.env.PORT || 5000;
-
-httpServer.listen(PORT, () => {
-  console.log("╔════════════════════════════════════════╗");
-  console.log("║   SHREENIKA AI - BACKEND STARTED       ║");
-  console.log("╚════════════════════════════════════════╝");
-  console.log(`🚀 Server: http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
-  console.log("════════════════════════════════════════");
 });
 
 /* =======================

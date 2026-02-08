@@ -4,7 +4,7 @@ import crypto from "crypto";
 import User from "./user.model.js";
 import Agent from "../agent/agent.model.js";
 import Subscription from "../billing/subscription.model.js";
-import { sendVerificationEmail, sendMail } from "../../utils/mailer.js";
+import { sendMail } from "../../utils/mailer.js";
 
 
 /* =========================
@@ -24,19 +24,13 @@ export const register = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const emailVerificationToken = crypto.randomBytes(32).toString("hex");
-
-    // ✅ FOR DEVELOPMENT: Auto-verify localhost emails
-    const isDevelopment = process.env.NODE_ENV !== 'production';
-    const autoVerify = isDevelopment && email.includes('localhost');
 
     const user = await User.create({
       email,
       name: name || email.split('@')[0],
       password: hashedPassword,
       role: "user",
-      emailVerified: autoVerify || false,
-      emailVerificationToken: autoVerify ? undefined : emailVerificationToken,
+      emailVerified: true,
       isActive: true
     });
 
@@ -83,31 +77,23 @@ export const register = async (req, res) => {
 
     console.log('✅ Default subscription created (Starter plan)');
 
-    // ✅ FOR DEVELOPMENT: Skip email verification and return token
-    if (autoVerify) {
-      const token = jwt.sign(
-        { id: user._id.toString(), role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      return res.status(201).json({
-        message: "Account created successfully",
-        token,
-        user: {
-          id: user._id.toString(),
-          email: user.email,
-          role: user.role,
-          emailVerified: true
-        }
-      });
-    }
-
-    // Send verification email for production
-    await sendVerificationEmail(user.email, emailVerificationToken);
+    // ✅ Generate JWT token so user can log in immediately
+    const token = jwt.sign(
+      { id: user._id.toString(), role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
 
     return res.status(201).json({
-      message: "Account created. Please verify your email."
+      message: "Account created successfully",
+      token,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: true
+      }
     });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
@@ -222,6 +208,7 @@ export const login = async (req, res) => {
       token,
       user: {
         id: user._id.toString(),
+        name: user.name || user.email.split('@')[0],
         email: user.email,
         role: user.role,
         emailVerified: user.emailVerified
@@ -303,6 +290,31 @@ export const resetPassword = async (req, res) => {
     return res.json({ message: "Password reset successful" });
   } catch (err) {
     console.error("RESET PASSWORD ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
+/* =========================
+   GET CURRENT USER (ME)
+========================= */
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password -emailVerificationToken -resetPasswordToken -resetPasswordExpires");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      user: {
+        id: user._id.toString(),
+        name: user.name || user.email.split('@')[0],
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified
+      }
+    });
+  } catch (err) {
+    console.error("GET ME ERROR:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };

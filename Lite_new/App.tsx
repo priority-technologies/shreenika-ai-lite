@@ -14,6 +14,7 @@ import CallWorkspace from "./components/containers/CallWorkspace";
 
 import { Lead, CallLog, AgentConfig } from "./types";
 import { INITIAL_LEADS, MOCK_CALL_LOGS } from "./constants";
+import { apiFetch } from "./services/api";
 
 const App: React.FC = () => {
   /* =========================
@@ -32,14 +33,33 @@ const App: React.FC = () => {
       if (elapsed > hours48) {
         localStorage.removeItem("token");
         localStorage.removeItem("loginTime");
+        localStorage.removeItem("user");
         setIsAuthenticated(false);
       } else {
         setIsAuthenticated(true);
+        // Refresh user data if missing (e.g., after Google login)
+        if (!localStorage.getItem("user")) {
+          fetchAndStoreUser();
+        }
       }
     } else {
       setIsAuthenticated(false);
     }
   }, []);
+
+  /* =========================
+     FETCH & STORE USER PROFILE
+  ========================= */
+  const fetchAndStoreUser = async () => {
+    try {
+      const data = await apiFetch("/auth/me");
+      if (data.user) {
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
+    } catch (err) {
+      console.error("Failed to fetch user profile:", err);
+    }
+  };
 
   /* =========================
      GOOGLE CALLBACK HANDLING
@@ -52,6 +72,9 @@ const App: React.FC = () => {
     if (token) {
       localStorage.setItem("token", token);
       localStorage.setItem("loginTime", Date.now().toString());
+
+      // Fetch user profile from backend (Google login doesn't provide user data in URL)
+      fetchAndStoreUser();
 
       if (firstLogin === "true") {
         localStorage.setItem("forceOnboarding", "true");
@@ -191,7 +214,9 @@ const App: React.FC = () => {
           onLogin={() => {
             localStorage.setItem("loginTime", Date.now().toString());
             setIsAuthenticated(true);
-            setRoute("/dashboard");
+            // Check if first-time signup → route to onboarding
+            const shouldOnboard = localStorage.getItem("forceOnboarding") === "true";
+            setRoute(shouldOnboard ? "/onboarding" : "/dashboard");
           }}
         />
       );

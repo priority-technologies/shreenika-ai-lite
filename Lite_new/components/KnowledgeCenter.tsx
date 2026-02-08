@@ -1,8 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { AgentConfig, KnowledgeDocument } from '../types';
 import { KNOWLEDGE_BASE_LIMITS } from '../constants';
 import { FileText, Plus, Search, Trash2, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import AssignAgentModal from '../components/AssignAgentModal';
+import { getAgents } from '../services/api';
 
 // ================= PLAN GUARD LOGIC =================
 const storedUser = JSON.parse(localStorage.getItem('voxai_user') || '{}');
@@ -44,6 +45,22 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
   const [uploading, setUploading] = useState(false);
   const [pendingDoc, setPendingDoc] = useState<any>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [allAgents, setAllAgents] = useState<AgentConfig[]>([agent]);
+
+  // Fetch all agents from backend for assignment modal
+  useEffect(() => {
+    const fetchAllAgents = async () => {
+      try {
+        const agents = await getAgents();
+        if (Array.isArray(agents) && agents.length > 0) {
+          setAllAgents(agents);
+        }
+      } catch (err) {
+        console.error('Failed to fetch agents for assignment:', err);
+      }
+    };
+    fetchAllAgents();
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!kbRules.allowUpload) {
@@ -241,7 +258,7 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
       {/* ===== Assign Agent Modal ===== */}
       <AssignAgentModal
         isOpen={isAssignModalOpen}
-        agents={[agent]}
+        agents={allAgents}
         onClose={() => {
           setIsAssignModalOpen(false);
           setPendingDoc(null);

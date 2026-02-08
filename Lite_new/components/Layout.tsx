@@ -13,12 +13,6 @@ import {
   Settings,
 } from 'lucide-react';
 
-import VerificationBanner from "./verificationBanner.tsx";
-
-const user = JSON.parse(localStorage.getItem("user") || "null");
-
-<VerificationBanner user={user} />
-
 interface LayoutProps {
   children: React.ReactNode;
   currentPath: string;
@@ -37,7 +31,7 @@ const Layout: React.FC<LayoutProps> = ({
 
   useEffect(() => {
     const checkAdminStatus = () => {
-      const userStr = localStorage.getItem('voxai_user');
+      const userStr = localStorage.getItem('user');
       if (userStr) {
         const user = JSON.parse(userStr);
         setIsAdmin(user.role === 'admin' || user.role === 'superadmin');
@@ -52,7 +46,9 @@ const Layout: React.FC<LayoutProps> = ({
   }, [currentPath]);
 
   const handleLogout = () => {
-    localStorage.removeItem('voxai_user');
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    localStorage.removeItem('forceOnboarding');
     setIsAuthenticated(false);
     navigate('/login');
   };
