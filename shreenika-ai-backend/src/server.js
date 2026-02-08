@@ -5,7 +5,8 @@ import cors from "cors";
 import passport from "passport";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import "./config/passport.js";
+//import "./config/passport.js";
+import { initPassport } from "./config/passport.js";
 
 import authRoutes from "./modules/auth/auth.routes.js";
 import agentRoutes from "./modules/agent/agent.routes.js";
@@ -28,6 +29,7 @@ import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
 ======================= */
 const app = express();
 const httpServer = createServer(app);
+initPassport();
 
 /* =======================
    SERVER STARTUP (MOVED TO TOP - CRITICAL FOR CLOUD RUN)
