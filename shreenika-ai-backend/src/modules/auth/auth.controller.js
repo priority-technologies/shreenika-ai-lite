@@ -293,3 +293,28 @@ export const resetPassword = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+/* =========================
+   GET CURRENT USER (ME)
+========================= */
+export const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password -emailVerificationToken -resetPasswordToken -resetPasswordExpires");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      user: {
+        id: user._id.toString(),
+        name: user.name || user.email.split('@')[0],
+        email: user.email,
+        role: user.role,
+        emailVerified: user.emailVerified
+      }
+    });
+  } catch (err) {
+    console.error("GET ME ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
