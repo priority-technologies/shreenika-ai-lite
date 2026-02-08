@@ -1,5 +1,6 @@
 import express from "express";
 import passport from "passport";
+import { requireAuth } from "./auth.middleware.js";
 
 import {
   register,
@@ -10,7 +11,6 @@ import {
   getMe
 } from "./auth.controller.js";
 
-import { requireAuth } from "./auth.middleware.js";
 import { googleAuthCallback } from "./google.controller.js";
 
 const router = express.Router();
