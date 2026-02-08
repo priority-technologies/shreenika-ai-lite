@@ -89,6 +89,7 @@ export const register = async (req, res) => {
       token,
       user: {
         id: user._id.toString(),
+        name: user.name,
         email: user.email,
         role: user.role,
         emailVerified: true
@@ -207,6 +208,7 @@ export const login = async (req, res) => {
       token,
       user: {
         id: user._id.toString(),
+        name: user.name || user.email.split('@')[0],
         email: user.email,
         role: user.role,
         emailVerified: user.emailVerified
