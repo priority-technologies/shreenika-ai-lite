@@ -1,5 +1,6 @@
 import express from "express";
 import passport from "passport";
+import { requireAuth } from "./auth.middleware.js";
 
 import {
   register,
