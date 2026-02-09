@@ -28,6 +28,7 @@ import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
    APP & SERVER CREATION
 ======================= */
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 initPassport();
 app.use(passport.initialize());
