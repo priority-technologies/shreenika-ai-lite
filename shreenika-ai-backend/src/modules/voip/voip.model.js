@@ -1,4 +1,6 @@
+
 import mongoose from "mongoose";
+import { encrypt, decrypt } from "../utils/encryption.js";
 
 const voipProviderSchema = new mongoose.Schema(
   {
@@ -14,13 +16,40 @@ const voipProviderSchema = new mongoose.Schema(
       required: true,
     },
 
+
     // Provider credentials (encrypted in production)
     credentials: {
       accountSid: String, // Twilio: Account SID
       authToken: String, // Twilio: Auth Token
       apiKey: String, // Generic API Key for other providers
       secretKey: String, // Generic Secret Key
+      endpointUrl: String, // For Other providers
+      httpMethod: String, // For Other providers
+      headers: Object, // For Other providers
+      region: String, // For Other providers
     },
+// Encrypt sensitive credentials before saving
+voipProviderSchema.pre("save", function (next) {
+  if (this.isModified("credentials")) {
+    if (this.credentials.apiKey) this.credentials.apiKey = encrypt(this.credentials.apiKey);
+    if (this.credentials.secretKey) this.credentials.secretKey = encrypt(this.credentials.secretKey);
+    if (this.credentials.accountSid) this.credentials.accountSid = encrypt(this.credentials.accountSid);
+    if (this.credentials.authToken) this.credentials.authToken = encrypt(this.credentials.authToken);
+    if (this.credentials.endpointUrl) this.credentials.endpointUrl = encrypt(this.credentials.endpointUrl);
+  }
+  next();
+});
+
+// Decrypt sensitive credentials after fetching
+voipProviderSchema.methods.getDecryptedCredentials = function () {
+  const creds = { ...this.credentials };
+  if (creds.apiKey) creds.apiKey = decrypt(creds.apiKey);
+  if (creds.secretKey) creds.secretKey = decrypt(creds.secretKey);
+  if (creds.accountSid) creds.accountSid = decrypt(creds.accountSid);
+  if (creds.authToken) creds.authToken = decrypt(creds.authToken);
+  if (creds.endpointUrl) creds.endpointUrl = decrypt(creds.endpointUrl);
+  return creds;
+};
 
     isActive: {
       type: Boolean,

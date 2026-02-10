@@ -11,7 +11,12 @@ import {
   getMe
 } from "./auth.controller.js";
 
-import { googleAuthCallback } from "./google.controller.js";
+import { googleCallback } from "./google.callback.js";
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+
+const isGoogleAuthEnabled =
+  !!process.env.GOOGLE_CLIENT_ID &&
+  !!process.env.GOOGLE_CLIENT_SECRET;
 
 const router = express.Router();
 
@@ -43,23 +48,29 @@ router.post("/reset-password", resetPassword);
    GOOGLE OAUTH
 ========================= */
 
-// Step 1: Redirect user to Google
-router.get(
-  "/google",
-  passport.authenticate("google", {
-    scope: ["profile", "email"],
-    session: false
-  })
-);
+if (isGoogleAuthEnabled) {
+  // Step 1: Redirect user to Google
+  router.get(
+    "/google",
+    passport.authenticate("google", {
+      scope: ["profile", "email"],
+      session: false
+    })
+  );
 
-// Step 2: Google callback
-router.get(
-  "/google/callback",
-  passport.authenticate("google", {
-    session: false,
-    failureRedirect: `${process.env.FRONTEND_URL}/login`
-  }),
-  googleAuthCallback
-);
+  // Step 2: Google callback
+  router.get(
+    "/google/callback",
+    passport.authenticate("google", {
+      session: false,
+      failureRedirect: `${FRONTEND_URL}/login`
+    }),
+    googleCallback
+  );
+
+  console.log("✅ Google OAuth routes enabled");
+} else {
+  console.warn("⚠️ Google OAuth routes disabled (missing env vars)");
+}
 
 export default router;

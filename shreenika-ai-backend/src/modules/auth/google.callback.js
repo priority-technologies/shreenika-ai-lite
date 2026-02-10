@@ -3,6 +3,7 @@ import Agent from "../agent/agent.model.js";
 import Subscription from "../billing/subscription.model.js";
 
 export const googleCallback = async (req, res) => {
+  const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
   try {
     const user = req.user;
 
@@ -66,10 +67,10 @@ export const googleCallback = async (req, res) => {
     );
 
     res.redirect(
-      `${process.env.FRONTEND_URL}/google-auth-success?token=${token}&firstLogin=${!user.hasOnboarded}`
+      `${FRONTEND_URL}/google-auth-success?token=${token}&firstLogin=${!user.hasOnboarded}`
     );
   } catch (err) {
     console.error("Google callback error:", err);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=google`);
+    res.redirect(`${FRONTEND_URL}/login?error=google`);
   }
 };

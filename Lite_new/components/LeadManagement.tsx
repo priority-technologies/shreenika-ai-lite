@@ -214,6 +214,7 @@ const LeadManagement: React.FC = () => {
     user.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+
   return (
     <div className="space-y-6 animate-fadeIn">
       <audio ref={audioRef} onEnded={() => setPlayingCallId(null)} className="hidden" />
@@ -245,6 +246,36 @@ const LeadManagement: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* VOIP Analytics for Admin */}
+      {view === 'users' && (
+        <div className="overflow-x-auto mt-4">
+          <table className="min-w-full divide-y divide-slate-200 bg-white">
+            <thead>
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">User Email</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">VOIP Provider</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">DID(s)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredUsers.map(user => (
+                <tr key={user._id}>
+                  <td className="px-6 py-4 text-sm font-medium text-slate-900">{user.email}</td>
+                  <td className="px-6 py-4 text-sm text-slate-700">{user.voipProvider?.provider || 'N/A'}</td>
+                  <td className="px-6 py-4 text-sm text-slate-700">{user.voipProvider?.dids?.join(', ') || 'N/A'}</td>
+                  <td className="px-6 py-4 text-sm text-slate-700">{user.isActive ? 'Active' : 'Suspended'}</td>
+                  <td className="px-6 py-4 text-sm">
+                    <button onClick={() => loadUserContacts(user)} className="text-blue-600 hover:underline">View Contacts</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* CONTACTS VIEW */}
       {view === 'contacts' && (

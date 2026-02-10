@@ -44,21 +44,29 @@ export const getVoipProvider = async (req, res) => {
  */
 export const addVoipProvider = async (req, res) => {
   try {
-    const { provider, accountSid, authToken, apiKey, secretKey } = req.body;
+    const {
+      provider,
+      accountSid,
+      authToken,
+      apiKey,
+      secretKey,
+      endpointUrl,
+      httpMethod,
+      headers,
+      region
+    } = req.body;
 
     if (!provider) {
       return res.status(400).json({ error: "Provider name is required" });
     }
 
-    // Validate Twilio credentials if Twilio is selected
+    // Twilio validation (existing logic)
     if (provider === "Twilio") {
       if (!accountSid || !authToken) {
         return res.status(400).json({
           error: "Account SID and Auth Token are required for Twilio",
         });
       }
-
-      // Verify Twilio credentials by making a test API call
       try {
         const twilioClient = new Twilio(accountSid, authToken);
         await twilioClient.api.accounts(accountSid).fetch();
@@ -67,6 +75,37 @@ export const addVoipProvider = async (req, res) => {
         return res.status(400).json({
           error: "Invalid Twilio credentials. Please check your Account SID and Auth Token.",
         });
+      }
+    }
+
+    // Other provider validation
+    let didList = [];
+    let isVerified = false;
+    if (provider === "Other") {
+      if (!apiKey || !secretKey || !endpointUrl) {
+        return res.status(400).json({ error: "API Key, Secret Key, and Endpoint URL are required for Other providers" });
+      }
+      // Basic validation: try to fetch DIDs from the endpoint
+      try {
+        const fetch = (await import('node-fetch')).default;
+        const response = await fetch(endpointUrl, {
+          method: httpMethod || 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}:${secretKey}`,
+            ...(headers || {})
+          }
+        });
+        if (!response.ok) throw new Error('Failed to validate VOIP API');
+        const data = await response.json();
+        // Assume DIDs are in data.dids or data.numbers (customize as needed)
+        didList = data.dids || data.numbers || [];
+        if (!Array.isArray(didList) || didList.length === 0) {
+          throw new Error('No DIDs found for this VOIP provider');
+        }
+        isVerified = true;
+      } catch (err) {
+        console.error("Other VOIP validation failed:", err);
+        return res.status(400).json({ error: "Invalid VOIP API credentials or endpoint. " + err.message });
       }
     }
 
@@ -85,8 +124,12 @@ export const addVoipProvider = async (req, res) => {
         authToken: authToken || null,
         apiKey: apiKey || null,
         secretKey: secretKey || null,
+        endpointUrl: endpointUrl || null,
+        httpMethod: httpMethod || null,
+        headers: headers || null,
+        region: region || null,
       },
-      isVerified: provider === "Twilio", // Auto-verify if Twilio validation passed
+      isVerified,
       isActive: true,
       lastSyncedAt: new Date(),
     });
@@ -95,11 +138,7 @@ export const addVoipProvider = async (req, res) => {
     if (provider === "Twilio" && accountSid && authToken) {
       try {
         const twilioClient = new Twilio(accountSid, authToken);
-        const numbers = await twilioClient.incomingPhoneNumbers.list({
-          limit: 50,
-        });
-
-        // Import all numbers
+        const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
         for (const number of numbers) {
           await VoipNumber.findOneAndUpdate(
             {
@@ -129,12 +168,36 @@ export const addVoipProvider = async (req, res) => {
             { upsert: true, new: true }
           );
         }
-
         console.log(`✅ Imported ${numbers.length} numbers from Twilio`);
       } catch (importError) {
         console.error("Failed to import Twilio numbers:", importError);
-        // Don't fail the provider creation, just log
       }
+    }
+
+    // If Other, import DIDs
+    if (provider === "Other" && isVerified && didList.length > 0) {
+      for (const did of didList) {
+        await VoipNumber.findOneAndUpdate(
+          {
+            userId: req.user._id,
+            phoneNumber: did.number || did.did || did,
+          },
+          {
+            userId: req.user._id,
+            providerId: newProvider._id,
+            phoneNumber: did.number || did.did || did,
+            friendlyName: did.friendlyName || did.name || did.number || did,
+            region: did.region || region || "Unknown",
+            country: did.country || "Unknown",
+            capabilities: did.capabilities || { voice: true },
+            status: "active",
+            source: "imported",
+            providerData: did,
+          },
+          { upsert: true, new: true }
+        );
+      }
+      console.log(`✅ Imported ${didList.length} DIDs from Other provider`);
     }
 
     res.json({
@@ -144,6 +207,7 @@ export const addVoipProvider = async (req, res) => {
         id: newProvider._id,
         provider: newProvider.provider,
         isVerified: newProvider.isVerified,
+        dids: didList,
       },
     });
   } catch (error) {

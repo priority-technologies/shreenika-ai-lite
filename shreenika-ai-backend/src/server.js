@@ -5,7 +5,8 @@ import cors from "cors";
 import passport from "passport";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import "./config/passport.js";
+//import "./config/passport.js";
+import { initPassport } from "./config/passport.js";
 
 import authRoutes from "./modules/auth/auth.routes.js";
 import agentRoutes from "./modules/agent/agent.routes.js";
@@ -27,7 +28,10 @@ import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
    APP & SERVER CREATION
 ======================= */
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
+initPassport();
+app.use(passport.initialize());
 
 /* =======================
    SERVER STARTUP (MOVED TO TOP - CRITICAL FOR CLOUD RUN)
@@ -99,11 +103,6 @@ app.options("*", cors(corsOptions));
 ======================= */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-/* =======================
-   PASSPORT INITIALIZATION
-======================= */
-app.use(passport.initialize());
 
 /* =======================
    REQUEST LOGGING
