@@ -11,7 +11,11 @@ import {
   getMe
 } from "./auth.controller.js";
 
+<<<<<<< HEAD
 import { googleCallback } from "./google.callback.js";
+=======
+import { googleAuthCallback } from "./google.controller.js";
+>>>>>>> e0dc553de5bf886aeeff9af5fa1609bdc38dffb9
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 
 const isGoogleAuthEnabled =
@@ -65,7 +69,11 @@ if (isGoogleAuthEnabled) {
       session: false,
       failureRedirect: `${FRONTEND_URL}/login`
     }),
+<<<<<<< HEAD
     googleCallback
+=======
+    googleAuthCallback
+>>>>>>> e0dc553de5bf886aeeff9af5fa1609bdc38dffb9
   );
 
   console.log("✅ Google OAuth routes enabled");
