@@ -553,8 +553,9 @@ export const setupVoipForRegistration = async (req, res) => {
       }
       try {
         const twilioClient = new Twilio(accountSid, authToken);
-        await twilioClient.api.accounts(accountSid).fetch();
-        isVerified = true;
+        // Verify Twilio credentials by fetching account info
+        const account = await twilioClient.api.accounts(accountSid).fetch();
+        isVerified = !!account.sid;  // If we got account data, credentials are valid
       } catch (twilioError) {
         console.error("Twilio verification failed:", twilioError);
         return res.status(400).json({
