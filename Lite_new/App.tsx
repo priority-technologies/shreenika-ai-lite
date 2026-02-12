@@ -255,13 +255,17 @@ const App: React.FC = () => {
     const Page = () => {
       // Admin routes
       if (isAdmin && route.startsWith("/admin")) {
+        // Check for dynamic routes first
+        if (route.startsWith("/admin/users/") && route !== "/admin/users") {
+          const userId = route.replace("/admin/users/", "");
+          return <UserDetailsView navigate={navigate} userId={userId} />;
+        }
+
         switch (route) {
           case "/admin":
             return <SuperAdminDashboard navigate={navigate} />;
           case "/admin/users":
             return <UserManagementList navigate={navigate} />;
-          case "/admin/users/:id":
-            return <UserDetailsView navigate={navigate} />;
           case "/admin/cms/privacy":
             return <CMSEditor navigate={navigate} type="privacy" />;
           case "/admin/cms/faqs":
