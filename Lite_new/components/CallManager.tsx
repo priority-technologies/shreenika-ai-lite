@@ -864,13 +864,22 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
                        </tr>
                     ) : (
                        leads.map(lead => (
-                          <tr 
-                            key={lead.id} 
-                            className={`hover:bg-slate-50 cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50/50' : ''}`} 
-                            onClick={() => toggleLeadSelection(lead.id)}
+                          <tr
+                            key={lead.id}
+                            className={`hover:bg-slate-50 cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50/50' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleLeadSelection(lead.id);
+                            }}
                           >
-                             <td className="px-6 py-3">
-                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedLeadIds.has(lead.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}>
+                             <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
+                                <div
+                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedLeadIds.has(lead.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleLeadSelection(lead.id);
+                                  }}
+                                >
                                    {selectedLeadIds.has(lead.id) && <Plus className="w-3 h-3 rotate-45" />}
                                 </div>
                              </td>
