@@ -44,19 +44,18 @@ export const stripeWebhook = async (req, res) => {
 
       console.log(`✅ Activation fee paid for user ${userId}, upgrading to ${newPlan}`);
 
-      await Subscription.findOneAndUpdate(
-        { userId },
-        {
-          stripeCustomerId: session.customer,
-          plan: newPlan,
-          activationFeePaid: true,
-          pendingPlanUpgrade: null,
-          stripeSessionId: null,
-          status: "ACTIVE"
-        }
-      );
-
-      console.log(`✅ User ${userId} upgraded to ${newPlan} plan`);
+      // ✅ IMPORTANT: Fetch and save to trigger pre-save hook for plan limits
+      const subscription = await Subscription.findOne({ userId });
+      if (subscription) {
+        subscription.stripeCustomerId = session.customer;
+        subscription.plan = newPlan;
+        subscription.activationFeePaid = true;
+        subscription.pendingPlanUpgrade = null;
+        subscription.stripeSessionId = null;
+        subscription.status = "ACTIVE";
+        await subscription.save(); // Triggers pre-save hook!
+        console.log(`✅ User ${userId} upgraded to ${newPlan} plan with limits: agentLimit=${subscription.agentLimit}, docLimit=${subscription.docLimit}`);
+      }
       return;
     }
 
@@ -66,20 +65,25 @@ export const stripeWebhook = async (req, res) => {
         session.subscription
       );
 
-      await Subscription.findOneAndUpdate(
-        { userId: session.metadata.userId },
-        {
-          stripeCustomerId: session.customer,
-          stripeSubscriptionId: subscription.id,
-          stripePriceId: subscription.items.data[0].price.id,
-          plan: session.metadata.plan,
-          status: "ACTIVE",
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
-          currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-          gracePeriodEndsAt: null
-        },
-        { upsert: true }
-      );
+      // ✅ IMPORTANT: Fetch and save to trigger pre-save hook for plan limits
+      let dbSubscription = await Subscription.findOne({ userId: session.metadata.userId });
+
+      if (!dbSubscription) {
+        // Create new subscription if it doesn't exist
+        dbSubscription = new Subscription({ userId: session.metadata.userId });
+      }
+
+      dbSubscription.stripeCustomerId = session.customer;
+      dbSubscription.stripeSubscriptionId = subscription.id;
+      dbSubscription.stripePriceId = subscription.items.data[0].price.id;
+      dbSubscription.plan = session.metadata.plan;
+      dbSubscription.status = "ACTIVE";
+      dbSubscription.currentPeriodStart = new Date(subscription.current_period_start * 1000);
+      dbSubscription.currentPeriodEnd = new Date(subscription.current_period_end * 1000);
+      dbSubscription.gracePeriodEndsAt = null;
+
+      await dbSubscription.save(); // Triggers pre-save hook!
+      console.log(`✅ Recurring subscription activated for plan ${session.metadata.plan} with limits: agentLimit=${dbSubscription.agentLimit}, docLimit=${dbSubscription.docLimit}`);
     }
   }
 
