@@ -128,12 +128,17 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
           </div>
 
           {/* Buttons */}
-          <div className="mt-8 flex justify-between">
+          <div className="mt-8 flex justify-between gap-4">
             <button
-              onClick={() => finializeAgent()}
+              onClick={() => {
+                localStorage.removeItem("token");
+                localStorage.removeItem("user");
+                localStorage.removeItem("forceOnboarding");
+                navigate('/login');
+              }}
               className="border border-slate-300 text-slate-700 px-8 py-3 rounded-lg font-semibold hover:bg-slate-50 transition-colors"
             >
-              Skip
+              Back
             </button>
             <button
               onClick={handleContinue}
