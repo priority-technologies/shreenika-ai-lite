@@ -34,23 +34,7 @@ initPassport();
 app.use(passport.initialize());
 
 /* =======================
-   SERVER STARTUP (MOVED TO TOP - CRITICAL FOR CLOUD RUN)
-======================= */
-const PORT = process.env.PORT || 8080;
-
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log("╔════════════════════════════════════════╗");
-  console.log("║   SHREENIKA AI - BACKEND STARTED       ║");
-  console.log("╚════════════════════════════════════════╝");
-  console.log(`🚀 Server: http://localhost:${PORT}`);
-  console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
-  console.log("════════════════════════════════════════");
-});
-
-/* =======================
-   WEBSOCKET SETUP (AFTER SERVER START)
+   WEBSOCKET SETUP
 ======================= */
 export const io = new Server(httpServer, {
   cors: {
@@ -202,6 +186,22 @@ app.use((err, req, res, next) => {
     error: err.message || "Internal server error",
     ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
   });
+});
+
+/* =======================
+   SERVER STARTUP (AFTER ALL ROUTES CONFIGURED)
+======================= */
+const PORT = process.env.PORT || 8080;
+
+httpServer.listen(PORT, "0.0.0.0", () => {
+  console.log("╔════════════════════════════════════════╗");
+  console.log("║   SHREENIKA AI - BACKEND STARTED       ║");
+  console.log("╚════════════════════════════════════════╝");
+  console.log(`🚀 Server: http://localhost:${PORT}`);
+  console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
+  console.log("════════════════════════════════════════");
 });
 
 /* =======================
