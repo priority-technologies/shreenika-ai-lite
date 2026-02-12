@@ -3,8 +3,19 @@
  * Manages voice profiles, language settings, and voice-related utilities
  */
 
-import voiceProfiles from '../../config/voiceProfiles.json' assert { type: 'json' };
-import languageProfiles from '../../config/languageProfiles.json' assert { type: 'json' };
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const voiceProfiles = JSON.parse(
+  readFileSync(join(__dirname, '../../../config/voiceProfiles.json'), 'utf8')
+);
+const languageProfiles = JSON.parse(
+  readFileSync(join(__dirname, '../../../config/languageProfiles.json'), 'utf8')
+);
 
 /**
  * Get a voice profile by ID
