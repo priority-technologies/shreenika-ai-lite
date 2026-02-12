@@ -4,8 +4,7 @@ import Contact from "../contacts/contact.model.js";
 import Call from "../call/call.model.js";
 import Agent from "../agent/agent.model.js";
 import Lead from "../lead/lead.model.js";
-import VoipProvider from "../voip/voip.model.js";
-import VoipNumber from "../voip/voipNumber.model.js";
+import { VoipProvider, VoipNumber } from "../voip/voip.model.js";
 import CMS from "../cms/cms.model.js";
 import { Parser } from "json2csv";
 
