@@ -318,3 +318,28 @@ export const getMe = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+/* =========================
+   MARK USER AS ONBOARDED
+========================= */
+export const markOnboarded = async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { hasOnboarded: true },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.json({
+      message: "User marked as onboarded",
+      hasOnboarded: user.hasOnboarded
+    });
+  } catch (err) {
+    console.error("MARK ONBOARDED ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};

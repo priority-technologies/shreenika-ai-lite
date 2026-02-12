@@ -8,7 +8,8 @@ import {
   verifyEmail,
   forgotPassword,
   resetPassword,
-  getMe
+  getMe,
+  markOnboarded
 } from "./auth.controller.js";
 
 import { googleCallback } from "./google.callback.js";
@@ -25,6 +26,11 @@ const router = express.Router();
    CURRENT USER PROFILE
 ========================= */
 router.get("/me", requireAuth, getMe);
+
+/* =========================
+   MARK USER AS ONBOARDED
+========================= */
+router.post("/mark-onboarded", requireAuth, markOnboarded);
 
 /* =========================
    EMAIL / PASSWORD AUTH

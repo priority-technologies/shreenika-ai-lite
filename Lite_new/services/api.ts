@@ -215,6 +215,11 @@ export const setupVoipForRegistration = (payload: {
     body: JSON.stringify(payload),
   }, "core");
 
+export const markUserOnboarded = () =>
+  apiFetch("/auth/mark-onboarded", {
+    method: "POST",
+  }, "core");
+
 // ==============================
 // ADMIN / SUPER ADMIN APIs (CORE)
 // ==============================

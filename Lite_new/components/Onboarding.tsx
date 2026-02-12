@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AgentConfig } from '../types';
 import { Bot, ArrowRight, Loader2 } from 'lucide-react';
 import VoipSetupPopup from './VoipSetupPopup';
+import { markUserOnboarded } from '../services/api';
 
 interface OnboardingProps {
   setAgent: (agent: AgentConfig) => void;
@@ -42,7 +43,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
     }, 100);
   };
 
-  const finializeAgent = () => {
+  const finializeAgent = async () => {
     const defaultAgent: AgentConfig = {
       name: formData.name!,
       title: formData.title!,
@@ -67,6 +68,15 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
       welcomeMessage: `Hello, this is ${formData.name}. How can I assist you today?`,
       knowledgeBase: []
     };
+
+    // Mark user as onboarded in backend
+    try {
+      await markUserOnboarded();
+      console.log('✅ User marked as onboarded');
+    } catch (err) {
+      console.error('⚠️ Failed to mark user as onboarded:', err);
+    }
+
     setAgent(defaultAgent);
     navigate('/dashboard');
   };
