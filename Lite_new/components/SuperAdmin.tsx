@@ -22,7 +22,7 @@ import {
   Sliders,
   Volume2
 } from 'lucide-react';
-import { MOCK_CLIENTS, MOCK_TRANSACTIONS, VOICE_OPTIONS } from '../constants';
+import { MOCK_CLIENTS, MOCK_TRANSACTIONS } from '../constants';
 
 const SuperAdmin: React.FC = () => {
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -41,17 +41,18 @@ const SuperAdmin: React.FC = () => {
      vapi_private: '........................'
   });
 
-  // Local State for Voices
-  const [voices, setVoices] = useState(VOICE_OPTIONS.map(v => ({
-     ...v, 
-     isActive: true,
-     settings: {
-        stability: 0.5,
-        temperature: 0.7,
-        loudness: 1.0,
-        emotions: 0.5
-     }
-  })));
+  // Local State for Voices - Default voices list
+  const defaultVoices = [
+    { id: 'voice_1', displayName: 'Adit (Male, Professional)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_2', displayName: 'Priya (Female, Professional)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_3', displayName: 'Jackson (Male, Friendly)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_4', displayName: 'Aria (Female, Friendly)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_5', displayName: 'Vikram (Male, Formal)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_6', displayName: 'Anjali (Female, Warm)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_7', displayName: 'Rohan (Male, Young)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } },
+    { id: 'voice_8', displayName: 'Zara (Female, Bold)', isActive: true, settings: { stability: 0.5, temperature: 0.7, loudness: 1.0, emotions: 0.5 } }
+  ];
+  const [voices, setVoices] = useState(defaultVoices);
 
   // --- MODAL STATES ---
   const [showAddProviderModal, setShowAddProviderModal] = useState(false);

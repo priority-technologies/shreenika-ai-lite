@@ -259,3 +259,27 @@ export const revokeApiKey = (id: string) =>
   apiFetch(`/settings/api-keys/${id}`, {
     method: "DELETE",
   }, "core");
+
+// ==============================
+// VOICE ENGINE APIs (CORE)
+// ==============================
+export const getVoices = () =>
+  apiFetch("/voice/voices/available", undefined, "core");
+
+export const getLanguages = () =>
+  apiFetch("/voice/languages/available", undefined, "core");
+
+export const getAgentVoiceSettings = (agentId: string) =>
+  apiFetch(`/voice/agent/${agentId}/settings`, undefined, "core");
+
+export const updateAgentVoiceSettings = (agentId: string, settings: any) =>
+  apiFetch(`/voice/agent/${agentId}/settings`, {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  }, "core");
+
+export const previewVoice = (agentId: string, text: string) =>
+  apiFetch(`/voice/agent/${agentId}/preview`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  }, "core");
