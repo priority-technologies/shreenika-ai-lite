@@ -299,6 +299,11 @@ export const resetPassword = async (req, res) => {
 ========================= */
 export const getMe = async (req, res) => {
   try {
+    // Prevent caching - user data can change (role, etc.) and must always be fresh
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+
     const user = await User.findById(req.user.id).select("-password -emailVerificationToken -resetPasswordToken -resetPasswordExpires");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
