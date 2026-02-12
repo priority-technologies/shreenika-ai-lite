@@ -68,7 +68,7 @@ export const googleCallback = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { id: dbUser._id, role: dbUser.role },
       process.env.JWT_SECRET,
       { expiresIn: "48h" } // ⏱ mandatory rule
     );

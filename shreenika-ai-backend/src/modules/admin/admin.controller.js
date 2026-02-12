@@ -66,18 +66,28 @@ export const getUserDetails = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const [subscription, agentCount, contactCount, callCount] = await Promise.all([
+    const [subscription, agents, contactCount, callCount, voipProvider, voipNumbers] = await Promise.all([
       Subscription.findOne({ userId }),
-      Agent.countDocuments({ userId }),
+      Agent.find({ userId }).select("_id name"),
       Contact.countDocuments({ ownerUserId: userId }),
-      Call.countDocuments({ userId })
+      Call.countDocuments({ userId }),
+      VoipProvider.findOne({ userId }).select("provider"),
+      VoipNumber.find({ userId }).populate('assignedAgentId', 'name')
     ]);
 
     res.json({
       user: {
         ...user.toObject(),
+        agents,
+        voipProvider: voipProvider?.provider,
+        voipNumbers: voipNumbers?.map(v => ({
+          number: v.number,
+          assignedAgentId: v.assignedAgentId?._id,
+          agentName: v.assignedAgentId?.name
+        })),
+        accountType: subscription?.plan || 'Starter',
         stats: {
-          agents: agentCount,
+          agents: agents.length,
           contacts: contactCount,
           calls: callCount
         },
@@ -303,7 +313,7 @@ export const exportUserData = async (req, res) => {
     // Get all calls
     const exportData = {
       user: {
-        id: user._id.toString(),
+        _id: user._id,
         name: user.name || user.email.split("@")[0],
         email: user.email,
         createdAt: user.createdAt
@@ -312,14 +322,14 @@ export const exportUserData = async (req, res) => {
         contacts.map(async (contact) => {
           const calls = await Call.find({ leadId: contact._id });
           return {
-            id: contact._id.toString(),
+            _id: contact._id,
             name: `${contact.firstName} ${contact.lastName}`,
             phone: contact.phone,
             email: contact.email,
             company: contact.company?.name || "N/A",
             status: contact.status,
             calls: calls.map((c) => ({
-              callId: c._id.toString(),
+              _id: c._id,
               status: c.status,
               duration: c.durationSeconds,
               startedAt: c.createdAt,
@@ -437,7 +447,7 @@ export const getUserLeads = async (req, res) => {
       .sort({ createdAt: -1 });
 
     const formattedLeads = leads.map((lead) => ({
-      id: lead._id.toString(),
+      _id: lead._id,
       name: `${lead.firstName} ${lead.lastName}`,
       phone: lead.phone,
       email: lead.email,
@@ -474,7 +484,7 @@ export const getLeadDetails = async (req, res) => {
 
     return res.json({
       lead: {
-        id: lead._id.toString(),
+        _id: lead._id,
         name: `${lead.firstName} ${lead.lastName}`,
         phone: lead.phone,
         email: lead.email,
@@ -483,7 +493,7 @@ export const getLeadDetails = async (req, res) => {
         isArchived: lead.isArchived
       },
       calls: calls.map((c) => ({
-        id: c._id.toString(),
+        _id: c._id,
         status: c.status,
         duration: c.durationSeconds,
         date: c.createdAt,
