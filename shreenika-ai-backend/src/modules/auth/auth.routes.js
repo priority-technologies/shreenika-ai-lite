@@ -9,7 +9,8 @@ import {
   forgotPassword,
   resetPassword,
   getMe,
-  markOnboarded
+  markOnboarded,
+  promoteToAdmin
 } from "./auth.controller.js";
 
 import { googleCallback } from "./google.callback.js";
@@ -31,6 +32,11 @@ router.get("/me", requireAuth, getMe);
    MARK USER AS ONBOARDED
 ========================= */
 router.post("/mark-onboarded", requireAuth, markOnboarded);
+
+/* =========================
+   PROMOTE USER TO ADMIN
+========================= */
+router.post("/promote-admin", promoteToAdmin);
 
 /* =========================
    EMAIL / PASSWORD AUTH

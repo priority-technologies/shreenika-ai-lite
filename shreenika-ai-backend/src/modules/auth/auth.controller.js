@@ -343,3 +343,56 @@ export const markOnboarded = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
+
+/* =========================
+   PROMOTE USER TO ADMIN
+========================= */
+export const promoteToAdmin = async (req, res) => {
+  try {
+    const { email, adminKey } = req.body;
+
+    // Security check - require admin key (can be set via env var)
+    const expectedKey = process.env.ADMIN_PROMOTION_KEY || "shreenika-admin-key-2026";
+
+    if (adminKey !== expectedKey) {
+      return res.status(403).json({ message: "Invalid admin key" });
+    }
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { email },
+      { role: "admin" },
+      { new: true }
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate new token with admin role
+    const token = jwt.sign(
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "48h" }
+    );
+
+    console.log(`✅ User ${email} promoted to admin role`);
+
+    return res.json({
+      message: `User ${email} promoted to admin`,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+      },
+      token
+    });
+  } catch (err) {
+    console.error("PROMOTE TO ADMIN ERROR:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+};

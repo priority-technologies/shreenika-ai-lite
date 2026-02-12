@@ -220,6 +220,12 @@ export const markUserOnboarded = () =>
     method: "POST",
   }, "core");
 
+export const promoteToAdmin = (email: string, adminKey: string) =>
+  apiFetch("/auth/promote-admin", {
+    method: "POST",
+    body: JSON.stringify({ email, adminKey }),
+  }, "auth");
+
 // ==============================
 // ADMIN / SUPER ADMIN APIs (CORE)
 // ==============================
