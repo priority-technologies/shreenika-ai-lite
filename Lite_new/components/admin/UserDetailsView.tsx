@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Download, FileText, ChevronDown, Phone } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import UserLeadsSection from './UserLeadsSection';
 
 interface Agent {
   _id: string;
@@ -284,9 +285,9 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
         </div>
       </div>
 
-      {/* Placeholder for Leads Section */}
-      <div className="bg-slate-50 rounded-lg border border-slate-200 p-6 text-center">
-        <p className="text-slate-600">Leads section coming in next phase...</p>
+      {/* Leads Section */}
+      <div className="bg-white rounded-lg border border-slate-200 p-6">
+        <UserLeadsSection userId={userId} navigate={navigate} />
       </div>
     </div>
   );

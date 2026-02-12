@@ -15,6 +15,7 @@ import CallWorkspace from "./components/containers/CallWorkspace";
 import SuperAdminDashboard from "./components/SuperAdminDashboard";
 import UserManagementList from "./components/admin/UserManagementList";
 import UserDetailsView from "./components/admin/UserDetailsView";
+import LeadDetailsView from "./components/admin/LeadDetailsView";
 import CMSEditor from "./components/admin/CMSEditor";
 import ComingSoonPage from "./components/admin/ComingSoonPage";
 
@@ -256,6 +257,11 @@ const App: React.FC = () => {
       // Admin routes
       if (isAdmin && route.startsWith("/admin")) {
         // Check for dynamic routes first
+        if (route.startsWith("/admin/leads/") && route !== "/admin/leads") {
+          const leadId = route.replace("/admin/leads/", "");
+          return <LeadDetailsView navigate={navigate} leadId={leadId} />;
+        }
+
         if (route.startsWith("/admin/users/") && route !== "/admin/users") {
           const userId = route.replace("/admin/users/", "");
           return <UserDetailsView navigate={navigate} userId={userId} />;
