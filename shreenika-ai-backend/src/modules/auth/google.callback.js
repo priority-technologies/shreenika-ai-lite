@@ -1,11 +1,18 @@
 import jwt from "jsonwebtoken";
 import Agent from "../agent/agent.model.js";
 import Subscription from "../billing/subscription.model.js";
+import User from "./user.model.js";
 
 export const googleCallback = async (req, res) => {
   const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
   try {
     const user = req.user;
+
+    // Fetch the latest user data from DB to get hasOnboarded status
+    const dbUser = await User.findById(user._id);
+    if (!dbUser) {
+      return res.redirect(`${FRONTEND_URL}/login?error=user_not_found`);
+    }
 
     // ✅ CHECK IF USER HAS ANY AGENTS - CREATE DEFAULT IF NONE
     const agentCount = await Agent.countDocuments({ userId: user._id });
@@ -67,8 +74,9 @@ export const googleCallback = async (req, res) => {
     );
 
     // Redirect to root with token in query params so frontend can extract and store it
+    // Use dbUser.hasOnboarded to check if user has completed onboarding
     res.redirect(
-      `${FRONTEND_URL}/?token=${token}&firstLogin=${!user.hasOnboarded}`
+      `${FRONTEND_URL}/?token=${token}&firstLogin=${!dbUser.hasOnboarded}`
     );
   } catch (err) {
     console.error("Google callback error:", err);
