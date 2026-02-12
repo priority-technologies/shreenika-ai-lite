@@ -1,6 +1,6 @@
 
 import mongoose from "mongoose";
-import { encrypt, decrypt } from "../utils/encryption.js";
+import { encrypt, decrypt } from "../../utils/encryption.js";
 
 const voipProviderSchema = new mongoose.Schema(
   {
