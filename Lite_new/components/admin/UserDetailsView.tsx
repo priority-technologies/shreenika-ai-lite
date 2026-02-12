@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Download, FileText, ChevronDown, Phone } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import UserLeadsSection from './UserLeadsSection';
+import InvoiceModal from './InvoiceModal';
 
 interface Agent {
   _id: string;
@@ -38,6 +39,7 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
   const [showAgentsDropdown, setShowAgentsDropdown] = useState(false);
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
 
   useEffect(() => {
     fetchUserDetails();
@@ -67,7 +69,7 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
       setSaving(true);
       await apiFetch(`/admin/users/${userId}/account-type`, {
         method: 'PUT',
-        body: JSON.stringify({ accountType: newType }),
+        body: JSON.stringify({ newPlan: newType }),
       }, 'core');
 
       setAccountType(newType);
@@ -76,7 +78,7 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
       fetchUserDetails();
     } catch (err) {
       console.error('Failed to change account type:', err);
-      setMessage('Failed to update account type');
+      setMessage('❌ Failed to update account type');
       setTimeout(() => setMessage(''), 3000);
     } finally {
       setSaving(false);
@@ -273,10 +275,7 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
           </button>
 
           <button
-            onClick={() => {
-              setMessage('📋 Invoice feature coming soon');
-              setTimeout(() => setMessage(''), 3000);
-            }}
+            onClick={() => setShowInvoiceModal(true)}
             className="flex items-center space-x-2 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors"
           >
             <FileText className="w-5 h-5" />
@@ -289,6 +288,13 @@ const UserDetailsView: React.FC<UserDetailsViewProps> = ({ navigate, userId }) =
       <div className="bg-white rounded-lg border border-slate-200 p-6">
         <UserLeadsSection userId={userId} navigate={navigate} />
       </div>
+
+      {/* Invoice Modal */}
+      <InvoiceModal
+        isOpen={showInvoiceModal}
+        onClose={() => setShowInvoiceModal(false)}
+        userId={userId}
+      />
     </div>
   );
 };
