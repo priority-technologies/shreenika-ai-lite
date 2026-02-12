@@ -25,13 +25,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
   };
 
   const handleVoipComplete = () => {
-    // VOIP setup complete, finalize agent and go to dashboard
-    finializeAgent();
+    // VOIP setup complete, close popup and finalize agent
+    setShowVoipPopup(false);
+    // Use setTimeout to ensure popup closes before navigation
+    setTimeout(() => {
+      finializeAgent();
+    }, 100);
   };
 
   const handleVoipSkip = () => {
     // Skip VOIP and go to dashboard (user can set it up later in Settings)
-    finializeAgent();
+    setShowVoipPopup(false);
+    // Use setTimeout to ensure popup closes before navigation
+    setTimeout(() => {
+      finializeAgent();
+    }, 100);
   };
 
   const finializeAgent = () => {
