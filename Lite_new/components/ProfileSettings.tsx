@@ -77,7 +77,7 @@ const ProfileSettings: React.FC = () => {
   const [isLoadingVoip, setIsLoadingVoip] = useState(false);
   const [voipError, setVoipError] = useState<string | null>(null);
 
-  const [importData, setImportData] = useState({ provider: 'Twilio', accountSid: '', authToken: '', apiKey: '', secretKey: '' });
+  const [importData, setImportData] = useState({ provider: 'Twilio', accountSid: '', authToken: '', apiKey: '', secretKey: '', did: '', endpointUrl: '' });
   const [isImporting, setIsImporting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -317,11 +317,28 @@ const ProfileSettings: React.FC = () => {
 
       // Add appropriate credentials based on provider
       if (importData.provider === 'Twilio') {
+        if (!importData.accountSid || !importData.authToken) {
+          setVoipError('Account SID and Auth Token are required for Twilio');
+          setIsImporting(false);
+          return;
+        }
         payload.accountSid = importData.accountSid;
         payload.authToken = importData.authToken;
-      } else {
+      } else if (importData.provider === 'Others') {
+        // For "Others": API Key, Secret Key, and DID are required
+        if (!importData.apiKey || !importData.secretKey || !importData.did) {
+          setVoipError('API Key, Secret Key, and DID (Phone Number) are required for third-party providers');
+          setIsImporting(false);
+          return;
+        }
         payload.apiKey = importData.apiKey;
         payload.secretKey = importData.secretKey;
+        payload.did = importData.did;
+        payload.provider = 'Others'; // Normalize to 'Others'
+        // Endpoint URL is optional
+        if (importData.endpointUrl) {
+          payload.endpointUrl = importData.endpointUrl;
+        }
       }
 
       await addVoipProvider(payload);
@@ -329,7 +346,7 @@ const ProfileSettings: React.FC = () => {
       // Reload VOIP data
       await loadVoipData();
 
-      setImportData({ provider: 'Twilio', accountSid: '', authToken: '', apiKey: '', secretKey: '' });
+      setImportData({ provider: 'Twilio', accountSid: '', authToken: '', apiKey: '', secretKey: '', did: '', endpointUrl: '' });
       alert('Provider connected and numbers imported successfully!');
       setVoipView('main');
     } catch (error: any) {
@@ -595,10 +612,7 @@ const ProfileSettings: React.FC = () => {
                                    className="w-full border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-blue-500 appearance-none"
                                 >
                                    <option>Twilio</option>
-                                   <option>Bland AI</option>
-                                   <option>Vapi</option>
-                                   <option>Vonage</option>
-                                   <option>Other</option>
+                                   <option>Others</option>
                                 </select>
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                              </div>
@@ -607,7 +621,7 @@ const ProfileSettings: React.FC = () => {
                           {importData.provider === 'Twilio' ? (
                              <>
                                 <div>
-                                   <label className="block text-sm font-medium text-slate-700 mb-1">Account SID</label>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">Account SID *</label>
                                    <input
                                       required
                                       type="text"
@@ -618,7 +632,7 @@ const ProfileSettings: React.FC = () => {
                                    />
                                 </div>
                                 <div>
-                                   <label className="block text-sm font-medium text-slate-700 mb-1">Auth Token</label>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">Auth Token *</label>
                                    <input
                                       required
                                       type="password"
@@ -632,7 +646,7 @@ const ProfileSettings: React.FC = () => {
                           ) : (
                              <>
                                 <div>
-                                   <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">API Key *</label>
                                    <input
                                       required
                                       type="text"
@@ -643,7 +657,7 @@ const ProfileSettings: React.FC = () => {
                                    />
                                 </div>
                                 <div>
-                                   <label className="block text-sm font-medium text-slate-700 mb-1">Secret Key</label>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">Secret Key / Access Token *</label>
                                    <input
                                       required
                                       type="password"
@@ -652,6 +666,29 @@ const ProfileSettings: React.FC = () => {
                                       placeholder="••••••••••••••••••••••••••••"
                                       className="w-full font-mono text-sm border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                                    />
+                                </div>
+                                <div>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">DID (Phone Number) *</label>
+                                   <input
+                                      required
+                                      type="text"
+                                      value={importData.did}
+                                      onChange={e => setImportData({...importData, did: e.target.value})}
+                                      placeholder="+1234567890 or your provider's DID format"
+                                      className="w-full font-mono text-sm border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                   />
+                                   <p className="text-xs text-slate-500 mt-1">Your phone number from the provider</p>
+                                </div>
+                                <div>
+                                   <label className="block text-sm font-medium text-slate-700 mb-1">Endpoint URL (Optional)</label>
+                                   <input
+                                      type="text"
+                                      value={importData.endpointUrl}
+                                      onChange={e => setImportData({...importData, endpointUrl: e.target.value})}
+                                      placeholder="https://api.yourprovider.com/v1"
+                                      className="w-full font-mono text-sm border border-slate-300 rounded-lg p-2.5 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                                   />
+                                   <p className="text-xs text-slate-500 mt-1">Provider's API base URL (leave empty for auto-discovery)</p>
                                 </div>
                              </>
                           )}

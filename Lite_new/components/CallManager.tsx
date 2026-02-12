@@ -868,13 +868,18 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
                             key={lead.id}
                             className={`hover:bg-slate-50 cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50/50' : ''}`}
                             onClick={(e) => {
+                              // Only toggle if clicking on the row, not on the checkbox itself
+                              if ((e.target as HTMLElement).closest('[data-checkbox]')) {
+                                return;
+                              }
                               e.stopPropagation();
                               toggleLeadSelection(lead.id);
                             }}
                           >
-                             <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
+                             <td className="px-6 py-3">
                                 <div
-                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${selectedLeadIds.has(lead.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}
+                                  data-checkbox="true"
+                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     toggleLeadSelection(lead.id);
