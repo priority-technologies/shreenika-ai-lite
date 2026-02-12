@@ -14,6 +14,13 @@ export const googleCallback = async (req, res) => {
       return res.redirect(`${FRONTEND_URL}/login?error=user_not_found`);
     }
 
+    // DEBUG LOGGING - Role persistence check
+    console.log(`🔍 Google OAuth Login Debug:`);
+    console.log(`   Email: ${dbUser.email}`);
+    console.log(`   Role in DB: "${dbUser.role}"`);
+    console.log(`   Passport role: "${user.role}"`);
+    console.log(`   User ID: ${dbUser._id}`);
+
     // ✅ CHECK IF USER HAS ANY AGENTS - CREATE DEFAULT IF NONE
     const agentCount = await Agent.countDocuments({ userId: user._id });
 
@@ -72,6 +79,8 @@ export const googleCallback = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "48h" } // ⏱ mandatory rule
     );
+
+    console.log(`✅ JWT Created with role: "${dbUser.role}" for ${dbUser.email}`);
 
     // Redirect to root with token in query params so frontend can extract and store it
     // Use dbUser.hasOnboarded to check if user has completed onboarding

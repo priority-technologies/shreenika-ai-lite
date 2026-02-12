@@ -37,6 +37,7 @@ export function initPassport() {
             } else {
               user.lastLogin = new Date();
               await user.save();
+              console.log(`📍 Existing user found. Email: ${email}, Role: "${user.role}"`);
             }
 
             return done(null, user);
