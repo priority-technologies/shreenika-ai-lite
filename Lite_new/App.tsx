@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "./components/Layout";
+import SuperAdminLayout from "./components/SuperAdminLayout";
 import Auth from "./components/Auth";
 import Onboarding from "./components/Onboarding";
 import Dashboard from "./components/Dashboard";
@@ -11,6 +12,11 @@ import LeadManagement from "./components/LeadManagement";
 import ProfileSettings from "./components/ProfileSettings";
 import ResetPassword from "./components/ResetPassword";
 import CallWorkspace from "./components/containers/CallWorkspace";
+import SuperAdminDashboard from "./components/SuperAdminDashboard";
+import UserManagementList from "./components/admin/UserManagementList";
+import UserDetailsView from "./components/admin/UserDetailsView";
+import CMSEditor from "./components/admin/CMSEditor";
+import ComingSoonPage from "./components/admin/ComingSoonPage";
 
 import { Lead, CallLog, AgentConfig } from "./types";
 import { INITIAL_LEADS, MOCK_CALL_LOGS } from "./constants";
@@ -92,11 +98,18 @@ const App: React.FC = () => {
      ROUTING (STATE BASED)
   ========================= */
   const [route, setRoute] = useState<string>("/dashboard");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
       setRoute("/login");
+      setIsAdmin(false);
     } else {
+      const userStr = localStorage.getItem("user");
+      const user = userStr ? JSON.parse(userStr) : null;
+      const adminStatus = user?.role === "admin" || user?.role === "superadmin";
+      setIsAdmin(adminStatus);
+
       const forceOnboarding = localStorage.getItem("forceOnboarding");
       if (forceOnboarding === "true") {
         setRoute("/onboarding");
@@ -107,6 +120,11 @@ const App: React.FC = () => {
   }, [isAuthenticated]);
 
   const navigate = (path: string) => {
+    // Prevent non-admin users from accessing admin routes
+    if (path.startsWith("/admin") && !isAdmin) {
+      setRoute("/dashboard");
+      return;
+    }
     setRoute(path);
   };
 
@@ -235,6 +253,41 @@ const App: React.FC = () => {
     }
 
     const Page = () => {
+      // Admin routes
+      if (isAdmin && route.startsWith("/admin")) {
+        switch (route) {
+          case "/admin":
+            return <SuperAdminDashboard navigate={navigate} />;
+          case "/admin/users":
+            return <UserManagementList navigate={navigate} />;
+          case "/admin/users/:id":
+            return <UserDetailsView navigate={navigate} />;
+          case "/admin/cms/privacy":
+            return <CMSEditor navigate={navigate} type="privacy" />;
+          case "/admin/cms/faqs":
+            return <CMSEditor navigate={navigate} type="faqs" />;
+          case "/admin/cms/tickets":
+            return (
+              <ComingSoonPage
+                navigate={navigate}
+                title="Support Tickets"
+                description="Ticket management system coming soon"
+              />
+            );
+          case "/admin/cms/affiliate":
+            return (
+              <ComingSoonPage
+                navigate={navigate}
+                title="Affiliate Center"
+                description="Affiliate program management coming soon"
+              />
+            );
+          default:
+            return <SuperAdminDashboard navigate={navigate} />;
+        }
+      }
+
+      // Regular user routes
       switch (route) {
         case "/dashboard":
           return <Dashboard logs={callLogs} leadCount={leads.length} />;
@@ -255,14 +308,25 @@ const App: React.FC = () => {
           );
         case "/usage":
           return <UsageBilling />;
-        case "/admin":
-          return <LeadManagement />;
         case "/settings":
           return <ProfileSettings />;
         default:
           return <Dashboard logs={callLogs} leadCount={leads.length} />;
       }
     };
+
+    // Use SuperAdminLayout for admin routes, regular Layout otherwise
+    if (isAdmin && route.startsWith("/admin")) {
+      return (
+        <SuperAdminLayout
+          currentPath={route}
+          navigate={navigate}
+          setIsAuthenticated={setIsAuthenticated}
+        >
+          <Page />
+        </SuperAdminLayout>
+      );
+    }
 
     return (
       <Layout
