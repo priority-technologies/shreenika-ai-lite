@@ -866,27 +866,16 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
                        leads.map(lead => (
                           <tr
                             key={lead.id}
-                            className={`hover:bg-slate-50 cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50/50' : ''}`}
-                            onClick={(e) => {
-                              // Only toggle if clicking on the row, not on the checkbox itself
-                              if ((e.target as HTMLElement).closest('[data-checkbox]')) {
-                                return;
-                              }
-                              e.stopPropagation();
-                              toggleLeadSelection(lead.id);
-                            }}
+                            className={`hover:bg-slate-50 ${selectedLeadIds.has(lead.id) ? 'bg-indigo-50/50' : ''}`}
                           >
                              <td className="px-6 py-3">
-                                <div
-                                  data-checkbox="true"
-                                  className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${selectedLeadIds.has(lead.id) ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-slate-300'}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleLeadSelection(lead.id);
-                                  }}
-                                >
-                                   {selectedLeadIds.has(lead.id) && <Plus className="w-3 h-3 rotate-45" />}
-                                </div>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedLeadIds.has(lead.id)}
+                                  onChange={() => toggleLeadSelection(lead.id)}
+                                  className="w-4 h-4 cursor-pointer"
+                                  aria-label={`Select ${lead.firstName} ${lead.lastName}`}
+                                />
                              </td>
                              <td className="px-6 py-3 text-sm font-medium text-slate-900">
                                {lead.firstName} {lead.lastName}
