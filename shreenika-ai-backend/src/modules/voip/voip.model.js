@@ -16,7 +16,6 @@ const voipProviderSchema = new mongoose.Schema(
       required: true,
     },
 
-
     // Provider credentials (encrypted in production)
     credentials: {
       accountSid: String, // Twilio: Account SID
@@ -28,6 +27,24 @@ const voipProviderSchema = new mongoose.Schema(
       headers: Object, // For Other providers
       region: String, // For Other providers
     },
+
+    customScript: String, // IVR logic for advanced users
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    lastSyncedAt: Date,
+  },
+  { timestamps: true }
+);
+
 // Encrypt sensitive credentials before saving
 voipProviderSchema.pre("save", function (next) {
   if (this.isModified("credentials")) {
@@ -50,21 +67,6 @@ voipProviderSchema.methods.getDecryptedCredentials = function () {
   if (creds.endpointUrl) creds.endpointUrl = decrypt(creds.endpointUrl);
   return creds;
 };
-
-    isActive: {
-      type: Boolean,
-      default: true,
-    },
-
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
-
-    lastSyncedAt: Date,
-  },
-  { timestamps: true }
-);
 
 const voipNumberSchema = new mongoose.Schema(
   {

@@ -1,6 +1,8 @@
 import Call from "./call.model.js";
 import Usage from "../usage/usage.model.js";
 import { getTwilioClient } from "../../config/twilio.client.js";
+import { ProviderFactory } from "./providers/ProviderFactory.js";
+import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
 
 const getMonthKey = () => {
   const d = new Date();
@@ -8,62 +10,94 @@ const getMonthKey = () => {
 };
 
 /**
- * OUTBOUND CALL
+ * OUTBOUND CALL - Routes through agent's assigned VOIP provider
  */
 export const startOutboundCall = async (req, res) => {
   try {
     const { agentId, leadId, toPhone } = req.body;
+
     if (!toPhone || !agentId) {
       return res.status(400).json({ error: "Missing required fields: agentId and toPhone are required" });
     }
 
-    // Normalize phone to E.164 format (Twilio requires +CountryCode format)
+    // Normalize phone to E.164 format
     let normalizedPhone = toPhone.replace(/[\s\-\(\)\.]/g, '');
     if (!normalizedPhone.startsWith('+')) {
-      // Default to US country code if no prefix
       normalizedPhone = '+1' + normalizedPhone;
     }
 
     console.log(`📱 Phone normalized: "${toPhone}" → "${normalizedPhone}"`);
 
-    // Validate required environment variables before attempting the call
-    if (!process.env.TWILIO_FROM_NUMBER) {
-      console.error("❌ TWILIO_FROM_NUMBER env var is not set");
-      return res.status(500).json({ error: "Twilio phone number not configured. Set TWILIO_FROM_NUMBER env var." });
-    }
-    if (!process.env.PUBLIC_BASE_URL) {
-      console.error("❌ PUBLIC_BASE_URL env var is not set");
-      return res.status(500).json({ error: "Public webhook URL not configured. Set PUBLIC_BASE_URL env var." });
+    // Get agent's assigned VOIP provider
+    const voipProvider = await getAgentProviderOrFallback(agentId);
+
+    if (!voipProvider) {
+      return res.status(400).json({
+        error: "No VOIP provider assigned to this agent. Please assign a phone number in Settings > VOIP."
+      });
     }
 
+    // Get agent's assigned phone number (DID)
+    const fromPhone = await getAgentPhoneNumber(agentId);
+
+    if (!fromPhone) {
+      // Fallback to env var if available (for backward compatibility)
+      if (process.env.TWILIO_FROM_NUMBER && voipProvider.provider === 'Twilio') {
+        console.warn(`⚠️ Agent ${agentId} has no assigned phone number, using system TWILIO_FROM_NUMBER`);
+      } else {
+        return res.status(400).json({
+          error: "No phone number (DID) assigned to this agent."
+        });
+      }
+    }
+
+    // Validate PUBLIC_BASE_URL
+    if (!process.env.PUBLIC_BASE_URL) {
+      console.error("❌ PUBLIC_BASE_URL env var is not set");
+      return res.status(500).json({ error: "Public webhook URL not configured." });
+    }
+
+    // Create call record
     const call = await Call.create({
       userId: req.user.id,
       agentId,
       leadId,
       direction: "OUTBOUND",
-      status: "INITIATED"
+      status: "INITIATED",
+      voipProvider: voipProvider.provider
     });
 
-    const twilio = getTwilioClient();
+    // Instantiate the correct provider
+    let provider;
+    try {
+      provider = ProviderFactory.createProvider(voipProvider);
+    } catch (err) {
+      console.error(`❌ Failed to create provider: ${err.message}`);
+      call.status = "FAILED";
+      await call.save();
+      return res.status(500).json({ error: `Provider error: ${err.message}` });
+    }
 
-    console.log(`📞 Starting outbound call: to=${normalizedPhone}, from=${process.env.TWILIO_FROM_NUMBER}, webhook=${process.env.PUBLIC_BASE_URL}/twilio/voice`);
+    // Initiate call via provider abstraction
+    console.log(`📞 Starting outbound call via ${voipProvider.provider}: to=${normalizedPhone}, from=${fromPhone || 'system'}`);
 
-    const twilioCall = await twilio.calls.create({
-      to: normalizedPhone,
-      from: process.env.TWILIO_FROM_NUMBER,
-      url: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
-      statusCallback: `${process.env.PUBLIC_BASE_URL}/twilio/status`,
-      statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
-      statusCallbackMethod: "POST"
+    const callResult = await provider.initiateCall({
+      toPhone: normalizedPhone,
+      fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
+      webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
+      statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
     });
 
-    call.twilioCallSid = twilioCall.sid;
+    // Update call record with provider's call ID
+    call.twilioCallSid = callResult.callSid;
+    call.providerCallId = callResult.providerCallId;
+    call.voipProvider = callResult.provider;
     await call.save();
 
-    console.log(`✅ Call initiated: SID=${twilioCall.sid}`);
+    console.log(`✅ Call initiated: SID=${callResult.callSid}, Provider=${callResult.provider}`);
     res.json(call);
   } catch (err) {
-    console.error("❌ Twilio outbound error:", err.message);
+    console.error("❌ Outbound call error:", err.message);
     console.error("Full error:", err);
     res.status(500).json({ error: err.message || "Outbound call failed" });
   }

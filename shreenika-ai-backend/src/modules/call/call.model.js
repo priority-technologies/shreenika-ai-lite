@@ -40,6 +40,17 @@ const callSchema = new mongoose.Schema(
       index: true
     },
 
+    voipProvider: {
+      type: String,
+      enum: ["Twilio", "Bland AI", "Vapi", "Vonage", "Other"],
+      default: "Twilio"
+    },
+
+    providerCallId: {
+      type: String,
+      index: true
+    },
+
     durationSeconds: {
       type: Number,
       default: 0

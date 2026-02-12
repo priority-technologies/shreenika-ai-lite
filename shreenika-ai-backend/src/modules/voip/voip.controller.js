@@ -273,7 +273,8 @@ export const syncVoipNumbers = async (req, res) => {
         .json({ error: "Sync is only supported for Twilio" });
     }
 
-    const { accountSid, authToken } = provider.credentials;
+    const decryptedCreds = provider.getDecryptedCredentials();
+    const { accountSid, authToken } = decryptedCreds;
     const twilioClient = new Twilio(accountSid, authToken);
 
     const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
@@ -486,7 +487,8 @@ export const getAvailableNumbers = async (req, res) => {
         .json({ error: "Twilio provider not configured" });
     }
 
-    const { accountSid, authToken } = provider.credentials;
+    const decryptedCreds = provider.getDecryptedCredentials();
+    const { accountSid, authToken } = decryptedCreds;
     const twilioClient = new Twilio(accountSid, authToken);
 
     const searchParams = {
@@ -518,6 +520,198 @@ export const getAvailableNumbers = async (req, res) => {
 };
 
 /**
+ * Setup VOIP during registration - Optional, auto-assigns first DID to default agent
+ */
+export const setupVoipForRegistration = async (req, res) => {
+  try {
+    const {
+      provider,
+      accountSid,
+      authToken,
+      apiKey,
+      secretKey,
+      endpointUrl,
+      httpMethod,
+      headers,
+      region,
+      customScript
+    } = req.body;
+
+    if (!provider) {
+      return res.status(400).json({ error: "Provider name is required" });
+    }
+
+    let didList = [];
+    let isVerified = false;
+
+    // Twilio validation
+    if (provider === "Twilio") {
+      if (!accountSid || !authToken) {
+        return res.status(400).json({
+          error: "Account SID and Auth Token are required for Twilio",
+        });
+      }
+      try {
+        const twilioClient = new Twilio(accountSid, authToken);
+        await twilioClient.api.accounts(accountSid).fetch();
+        isVerified = true;
+      } catch (twilioError) {
+        console.error("Twilio verification failed:", twilioError);
+        return res.status(400).json({
+          error: "Invalid Twilio credentials. Please check your Account SID and Auth Token.",
+        });
+      }
+    } else {
+      // Other provider validation
+      if (!apiKey || !secretKey || !endpointUrl) {
+        return res.status(400).json({
+          error: "API Key, Secret Key, and Endpoint URL are required",
+        });
+      }
+      try {
+        const fetch = (await import('node-fetch')).default;
+        const response = await fetch(endpointUrl, {
+          method: httpMethod || 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}:${secretKey}`,
+            ...(headers || {})
+          }
+        });
+        if (!response.ok) throw new Error('Failed to validate VOIP API');
+        const data = await response.json();
+        didList = data.dids || data.numbers || [];
+        if (!Array.isArray(didList) || didList.length === 0) {
+          throw new Error('No DIDs found for this VOIP provider');
+        }
+        isVerified = true;
+      } catch (err) {
+        console.error("VOIP validation failed:", err);
+        return res.status(400).json({
+          error: "Invalid VOIP API credentials or endpoint. " + err.message
+        });
+      }
+    }
+
+    // Deactivate existing providers
+    await VoipProvider.updateMany(
+      { userId: req.user._id },
+      { isActive: false }
+    );
+
+    // Create new provider
+    const newProvider = await VoipProvider.create({
+      userId: req.user._id,
+      provider,
+      credentials: {
+        accountSid: accountSid || null,
+        authToken: authToken || null,
+        apiKey: apiKey || null,
+        secretKey: secretKey || null,
+        endpointUrl: endpointUrl || null,
+        httpMethod: httpMethod || null,
+        headers: headers || null,
+        region: region || null,
+      },
+      customScript: customScript || null,
+      isVerified,
+      isActive: true,
+      lastSyncedAt: new Date(),
+    });
+
+    // Import numbers from Twilio
+    if (provider === "Twilio" && accountSid && authToken) {
+      try {
+        const twilioClient = new Twilio(accountSid, authToken);
+        const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
+        for (const number of numbers) {
+          await VoipNumber.findOneAndUpdate(
+            { userId: req.user._id, phoneNumber: number.phoneNumber },
+            {
+              userId: req.user._id,
+              providerId: newProvider._id,
+              phoneNumber: number.phoneNumber,
+              friendlyName: number.friendlyName || number.phoneNumber,
+              region: number.region || "Unknown",
+              country: number.isoCountry || "US",
+              capabilities: {
+                voice: number.capabilities?.voice || true,
+                sms: number.capabilities?.sms || true,
+                mms: number.capabilities?.mms || false,
+              },
+              status: "active",
+              source: "imported",
+              providerData: { sid: number.sid, capabilities: number.capabilities },
+            },
+            { upsert: true, new: true }
+          );
+        }
+        didList = numbers.map(n => ({ number: n.phoneNumber, sid: n.sid }));
+        console.log(`✅ Imported ${numbers.length} numbers from Twilio`);
+      } catch (importError) {
+        console.error("Failed to import Twilio numbers:", importError);
+      }
+    }
+
+    // Import DIDs from Other provider
+    if (provider !== "Twilio" && isVerified && didList.length > 0) {
+      for (const did of didList) {
+        await VoipNumber.findOneAndUpdate(
+          { userId: req.user._id, phoneNumber: did.number || did.did || did },
+          {
+            userId: req.user._id,
+            providerId: newProvider._id,
+            phoneNumber: did.number || did.did || did,
+            friendlyName: did.friendlyName || did.name || did.number || did,
+            region: did.region || region || "Unknown",
+            country: did.country || "Unknown",
+            capabilities: did.capabilities || { voice: true },
+            status: "active",
+            source: "imported",
+            providerData: did,
+          },
+          { upsert: true, new: true }
+        );
+      }
+      console.log(`✅ Imported ${didList.length} DIDs`);
+    }
+
+    // Auto-assign first DID to user's default agent
+    if (didList.length > 0) {
+      try {
+        const Agent = (await import("../agent/agent.model.js")).default;
+        const defaultAgent = await Agent.findOne({ userId: req.user._id }).sort({ createdAt: 1 });
+        if (defaultAgent) {
+          const firstNumber = didList[0].number || didList[0].phoneNumber || didList[0];
+          const firstDID = await VoipNumber.findOne({
+            userId: req.user._id,
+            providerId: newProvider._id,
+            phoneNumber: firstNumber
+          });
+          if (firstDID) {
+            firstDID.assignedAgentId = defaultAgent._id;
+            await firstDID.save();
+            console.log(`✅ Auto-assigned to agent ${defaultAgent.name}`);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to auto-assign DID:", err);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: "VOIP provider setup complete",
+      provider: { id: newProvider._id, provider: newProvider.provider, isVerified: newProvider.isVerified },
+      dids: didList,
+      autoAssigned: didList.length > 0,
+    });
+  } catch (error) {
+    console.error("Setup VOIP for registration error:", error);
+    res.status(500).json({ error: "Failed to setup VOIP provider" });
+  }
+};
+
+/**
  * Purchase phone number (Twilio)
  */
 export const purchaseNumber = async (req, res) => {
@@ -540,7 +734,8 @@ export const purchaseNumber = async (req, res) => {
         .json({ error: "Twilio provider not configured" });
     }
 
-    const { accountSid, authToken } = provider.credentials;
+    const decryptedCreds = provider.getDecryptedCredentials();
+    const { accountSid, authToken } = decryptedCreds;
     const twilioClient = new Twilio(accountSid, authToken);
 
     // Purchase number from Twilio

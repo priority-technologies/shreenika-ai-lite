@@ -198,6 +198,23 @@ export const purchaseNumber = (phoneNumber: string) =>
     body: JSON.stringify({ phoneNumber }),
   }, "core");
 
+export const setupVoipForRegistration = (payload: {
+  provider: string;
+  accountSid?: string;
+  authToken?: string;
+  apiKey?: string;
+  secretKey?: string;
+  endpointUrl?: string;
+  httpMethod?: string;
+  headers?: any;
+  region?: string;
+  customScript?: string;
+}) =>
+  apiFetch("/voip/setup-registration", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "core");
+
 // ==============================
 // ADMIN / SUPER ADMIN APIs (CORE)
 // ==============================

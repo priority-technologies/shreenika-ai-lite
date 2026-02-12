@@ -3,6 +3,8 @@ import Lead from "../lead/lead.model.js";
 import Usage from "../usage/usage.model.js";
 import { processCallAI } from "./call.processor.js";
 import { io } from "../../server.js";
+import { ProviderFactory } from "./providers/ProviderFactory.js";
+import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
 
 let activeCampaigns = new Map(); // userId -> { active: boolean, current: number, total: number }
 
@@ -76,10 +78,53 @@ export const startCampaign = async (req, res) => {
         phone: lead.phone,
       });
 
-      // Simulate call (replace with Twilio integration)
-      await new Promise((resolve) => setTimeout(resolve, 3000));
+      // Get agent's VOIP provider
+      const voipProvider = await getAgentProviderOrFallback(agentId);
+      if (!voipProvider) {
+        console.error(`❌ Agent ${agentId} has no VOIP provider assigned, skipping lead ${leadId}`);
+        call.status = "FAILED";
+        await call.save();
+        continue;
+      }
 
-      // Complete call
+      const fromPhone = await getAgentPhoneNumber(agentId);
+      if (!fromPhone && voipProvider.provider !== 'Twilio') {
+        console.error(`❌ Agent ${agentId} has no phone number assigned, skipping lead ${leadId}`);
+        call.status = "FAILED";
+        await call.save();
+        continue;
+      }
+
+      try {
+        const provider = ProviderFactory.createProvider(voipProvider);
+
+        const callResult = await provider.initiateCall({
+          toPhone: lead.phone,
+          fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
+          webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
+          statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
+        });
+
+        call.twilioCallSid = callResult.callSid;
+        call.providerCallId = callResult.providerCallId;
+        call.voipProvider = callResult.provider;
+        call.status = "INITIATED";
+        await call.save();
+
+        console.log(`✅ Campaign call initiated: ${callResult.callSid} via ${callResult.provider}`);
+
+        // Wait for call to complete (in production, use webhook status updates)
+        // For now, simulate with timeout
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      } catch (err) {
+        console.error(`❌ Failed to initiate call for lead ${leadId}:`, err.message);
+        call.status = "FAILED";
+        await call.save();
+        continue;
+      }
+
+      // Update call duration and status
       const duration = Math.floor(Math.random() * 60) + 15;
       call.status = "COMPLETED";
       call.durationSeconds = duration;

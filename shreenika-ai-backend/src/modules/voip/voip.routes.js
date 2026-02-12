@@ -9,12 +9,16 @@ import {
   releaseNumber,
   getAvailableNumbers,
   purchaseNumber,
+  setupVoipForRegistration,
 } from "./voip.controller.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 
 const router = express.Router();
 
-// All routes require authentication
+// Registration VOIP setup - requires auth but happens during onboarding
+router.post("/setup-registration", requireAuth, setupVoipForRegistration);
+
+// All other routes require authentication
 router.use(requireAuth);
 
 // Provider management
