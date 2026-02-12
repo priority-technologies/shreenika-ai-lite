@@ -41,14 +41,16 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
         payload.accountSid = formData.accountSid;
         payload.authToken = formData.authToken;
       } else {
-        if (!formData.apiKey || !formData.secretKey || !formData.endpointUrl) {
-          setError('API Key, Secret Key, and Endpoint URL are required');
+        if (!formData.apiKey || !formData.secretKey) {
+          setError('API Key and Secret Key are required');
           setIsSubmitting(false);
           return;
         }
         payload.apiKey = formData.apiKey;
         payload.secretKey = formData.secretKey;
-        payload.endpointUrl = formData.endpointUrl;
+        if (formData.endpointUrl) {
+          payload.endpointUrl = formData.endpointUrl;
+        }
         if (formData.did) {
           payload.did = formData.did;
         }
@@ -188,7 +190,7 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Endpoint URL</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Endpoint URL (Optional)</label>
               <input
                 type="text"
                 value={formData.endpointUrl}
@@ -196,6 +198,7 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
                 placeholder="https://api.yourprovider.com/v1"
                 className="w-full border border-slate-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+              <p className="text-xs text-slate-500 mt-1">Optional - Provider's API base URL. Leave empty to use auto-discovery</p>
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">DID (Phone Number)</label>
