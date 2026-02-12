@@ -49,7 +49,11 @@ export const updateContact = async (req, res) => {
       return res.status(404).json({ message: "Contact not found" });
     }
 
-    return res.json(updated);
+    // Map MongoDB _id to id for frontend compatibility
+    return res.json({
+      ...updated.toObject(),
+      id: updated._id.toString()
+    });
   } catch (err) {
     console.error("UPDATE CONTACT ERROR:", err);
     return res.status(500).json({ message: "Unable to update contact" });

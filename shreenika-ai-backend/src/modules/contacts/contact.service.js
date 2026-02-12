@@ -10,7 +10,11 @@ export const createContactService = async (ownerUserId, data) => {
     source: "manual"
   });
 
-  return contact;
+  // Map MongoDB _id to id for frontend compatibility
+  return {
+    ...contact.toObject(),
+    id: contact._id.toString()
+  };
 };
 
 /* =========================
@@ -28,7 +32,13 @@ export const getContactsService = async (ownerUserId, search) => {
     ];
   }
 
-  return Contact.find(query).sort({ createdAt: -1 });
+  const contacts = await Contact.find(query).sort({ createdAt: -1 });
+
+  // Map MongoDB _id to id for frontend compatibility
+  return contacts.map(contact => ({
+    ...contact.toObject(),
+    id: contact._id.toString()
+  }));
 };
 
 /* =========================
@@ -41,5 +51,11 @@ export const importContactsService = async (ownerUserId, contacts) => {
     source: "csv"
   }));
 
-  return Contact.insertMany(formattedContacts);
+  const inserted = await Contact.insertMany(formattedContacts);
+
+  // Map MongoDB _id to id for frontend compatibility
+  return inserted.map(contact => ({
+    ...contact.toObject(),
+    id: contact._id.toString()
+  }));
 };
