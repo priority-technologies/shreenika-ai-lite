@@ -14,6 +14,8 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const [formData, setFormData] = useState({
     accountSid: '',
@@ -63,8 +65,16 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
       const response = await setupVoipForRegistration(payload);
 
       if (response.success) {
-        alert(`✅ Success! ${response.dids?.length || 0} DIDs imported and auto-assigned to your agent.`);
-        onComplete();
+        setError(null);
+        // Show success message
+        const didsCount = response.dids?.length || 0;
+        setSuccessMessage(`✅ Success! ${didsCount} DID${didsCount !== 1 ? 's' : ''} imported and assigned to your agent.`);
+        setIsSuccess(true);
+        // Navigate after showing success message
+        setTimeout(() => {
+          onComplete();
+        }, 1500); // Show message for 1.5 seconds then navigate
+        return;
       }
     } catch (err: any) {
       setError(err.message || 'Failed to setup VOIP provider');
@@ -74,6 +84,24 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
   };
 
   if (!isOpen) return null;
+
+  // Show success screen if setup was successful
+  if (isSuccess) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4 animate-fadeIn">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-12 text-center">
+          <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-10 h-10 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+          </div>
+          <h3 className="text-2xl font-bold text-slate-900 mb-2">Setup Complete!</h3>
+          <p className="text-slate-600 mb-6">{successMessage}</p>
+          <p className="text-sm text-slate-500">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4 animate-fadeIn">
