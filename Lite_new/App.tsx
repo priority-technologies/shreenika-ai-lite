@@ -234,10 +234,6 @@ const App: React.FC = () => {
       );
     }
 
-    if (!agent.voipProvider && route !== "/onboarding") {
-      return <Onboarding setAgent={setAgent} navigate={navigate} />;
-    }
-
     const Page = () => {
       switch (route) {
         case "/dashboard":

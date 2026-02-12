@@ -127,8 +127,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ setAgent, navigate }) => {
             </div>
           </div>
 
-          {/* Continue Button */}
-          <div className="mt-8 flex justify-end">
+          {/* Buttons */}
+          <div className="mt-8 flex justify-between">
+            <button
+              onClick={() => finializeAgent()}
+              className="border border-slate-300 text-slate-700 px-8 py-3 rounded-lg font-semibold hover:bg-slate-50 transition-colors"
+            >
+              Skip
+            </button>
             <button
               onClick={handleContinue}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors shadow-lg shadow-indigo-200"
