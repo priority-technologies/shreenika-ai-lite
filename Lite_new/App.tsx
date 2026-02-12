@@ -177,12 +177,12 @@ const App: React.FC = () => {
   ========================= */
   const [leads, setLeads] = useState<Lead[]>(() => {
     const saved = localStorage.getItem("voxai_leads");
-    return saved ? JSON.parse(saved) : INITIAL_LEADS;
+    return saved ? JSON.parse(saved) : []; // Start with empty array for new users, not mock data
   });
 
   const [callLogs, setCallLogs] = useState<CallLog[]>(() => {
     const saved = localStorage.getItem("voxai_logs");
-    return saved ? JSON.parse(saved) : MOCK_CALL_LOGS;
+    return saved ? JSON.parse(saved) : []; // Start with empty array for new users, not mock data
   });
 
   /* =========================
