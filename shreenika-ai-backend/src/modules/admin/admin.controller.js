@@ -3,6 +3,11 @@ import Subscription from "../billing/subscription.model.js";
 import Contact from "../contacts/contact.model.js";
 import Call from "../call/call.model.js";
 import Agent from "../agent/agent.model.js";
+import Lead from "../lead/lead.model.js";
+import VoipProvider from "../voip/voip.model.js";
+import VoipNumber from "../voip/voipNumber.model.js";
+import CMS from "../cms/cms.model.js";
+import { Parser } from "json2csv";
 
 /**
  * List all users (for Super Admin Lead Management)
@@ -243,5 +248,253 @@ export const checkAdminStatus = async (req, res) => {
   } catch (error) {
     console.error("❌ checkAdminStatus error:", error);
     res.status(500).json({ error: "Failed to check admin status" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Change user account type (plan upgrade/downgrade)
+ */
+export const changeAccountType = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { newPlan } = req.body;
+
+    if (!["Starter", "Pro", "Enterprise"].includes(newPlan)) {
+      return res.status(400).json({ message: "Invalid plan type" });
+    }
+
+    const subscription = await Subscription.findOneAndUpdate(
+      { userId },
+      { plan: newPlan },
+      { new: true }
+    );
+
+    if (!subscription) {
+      return res.status(404).json({ message: "Subscription not found" });
+    }
+
+    res.json({
+      message: `Account successfully changed to ${newPlan}`,
+      plan: newPlan,
+      updatedAt: new Date()
+    });
+  } catch (error) {
+    console.error("❌ changeAccountType error:", error);
+    res.status(500).json({ error: "Failed to change account type" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Export all user data (JSON/CSV)
+ */
+export const exportUserData = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { format = "json" } = req.query;
+
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Get all contacts/leads
+    const contacts = await Contact.find({ ownerUserId: userId });
+
+    // Get all calls
+    const exportData = {
+      user: {
+        id: user._id.toString(),
+        name: user.name || user.email.split("@")[0],
+        email: user.email,
+        createdAt: user.createdAt
+      },
+      contacts: await Promise.all(
+        contacts.map(async (contact) => {
+          const calls = await Call.find({ leadId: contact._id });
+          return {
+            id: contact._id.toString(),
+            name: `${contact.firstName} ${contact.lastName}`,
+            phone: contact.phone,
+            email: contact.email,
+            company: contact.company?.name || "N/A",
+            status: contact.status,
+            calls: calls.map((c) => ({
+              callId: c._id.toString(),
+              status: c.status,
+              duration: c.durationSeconds,
+              startedAt: c.createdAt,
+              transcript: c.transcript || "N/A",
+              summary: c.summary || "N/A"
+            }))
+          };
+        })
+      )
+    };
+
+    if (format === "csv") {
+      try {
+        const csvData = exportData.contacts.flatMap((contact) =>
+          contact.calls.map((call) => ({
+            contactName: contact.name,
+            contactPhone: contact.phone,
+            contactEmail: contact.email,
+            company: contact.company,
+            callStatus: call.status,
+            callDuration: call.duration,
+            callDate: call.startedAt,
+            transcript: call.transcript
+          }))
+        );
+
+        const csv = new Parser().parse(csvData);
+        res.header("Content-Type", "text/csv");
+        res.header(
+          "Content-Disposition",
+          `attachment; filename="user-data-${Date.now()}.csv"`
+        );
+        return res.send(csv);
+      } catch (csvError) {
+        console.error("CSV generation error:", csvError);
+        return res.status(400).json({ error: "Failed to generate CSV" });
+      }
+    } else {
+      res.header("Content-Type", "application/json");
+      res.header(
+        "Content-Disposition",
+        `attachment; filename="user-data-${Date.now()}.json"`
+      );
+      return res.json(exportData);
+    }
+  } catch (error) {
+    console.error("❌ exportUserData error:", error);
+    res.status(500).json({ error: "Failed to export user data" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Get CMS content (Privacy, Terms, FAQs)
+ */
+export const getCMSContent = async (req, res) => {
+  try {
+    const { type } = req.params; // "privacy" or "faqs"
+
+    if (!["privacy", "faqs"].includes(type)) {
+      return res.status(400).json({ message: "Invalid CMS type" });
+    }
+
+    const cms = await CMS.findOne({ type });
+    if (!cms) {
+      return res.json({
+        type,
+        content: type === "faqs" ? [] : { sections: [] }
+      });
+    }
+
+    return res.json({ type, content: cms.content });
+  } catch (error) {
+    console.error("❌ getCMSContent error:", error);
+    res.status(500).json({ error: "Failed to fetch CMS content" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Update CMS content (Privacy, Terms, FAQs)
+ */
+export const updateCMSContent = async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { content } = req.body;
+
+    if (!["privacy", "faqs"].includes(type)) {
+      return res.status(400).json({ message: "Invalid CMS type" });
+    }
+
+    const cms = await CMS.findOneAndUpdate(
+      { type },
+      { content, lastUpdatedBy: req.user.id, updatedAt: new Date() },
+      { new: true, upsert: true }
+    );
+
+    return res.json({
+      message: `${type} content updated successfully`,
+      type,
+      content: cms.content
+    });
+  } catch (error) {
+    console.error("❌ updateCMSContent error:", error);
+    res.status(500).json({ error: "Failed to update CMS content" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Get user's leads with archive status
+ */
+export const getUserLeads = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const leads = await Lead.find({ userId })
+      .sort({ createdAt: -1 });
+
+    const formattedLeads = leads.map((lead) => ({
+      id: lead._id.toString(),
+      name: `${lead.firstName} ${lead.lastName}`,
+      phone: lead.phone,
+      email: lead.email,
+      status: lead.status,
+      isArchived: lead.isArchived,
+      archivedAt: lead.archivedAt
+    }));
+
+    return res.json({
+      leads: formattedLeads,
+      total: formattedLeads.length
+    });
+  } catch (error) {
+    console.error("❌ getUserLeads error:", error);
+    res.status(500).json({ error: "Failed to fetch user leads" });
+  }
+};
+
+/**
+ * SUPER ADMIN: Get lead details with all calls
+ */
+export const getLeadDetails = async (req, res) => {
+  try {
+    const { leadId } = req.params;
+
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    const calls = await Call.find({ leadId })
+      .sort({ createdAt: -1 })
+      .select("_id status durationSeconds createdAt transcript summary recordingUrl");
+
+    return res.json({
+      lead: {
+        id: lead._id.toString(),
+        name: `${lead.firstName} ${lead.lastName}`,
+        phone: lead.phone,
+        email: lead.email,
+        company: lead.company?.name || "N/A",
+        status: lead.status,
+        isArchived: lead.isArchived
+      },
+      calls: calls.map((c) => ({
+        id: c._id.toString(),
+        status: c.status,
+        duration: c.durationSeconds,
+        date: c.createdAt,
+        transcript: c.transcript || "N/A",
+        summary: c.summary || "N/A",
+        recordingUrl: c.recordingUrl || null
+      })),
+      totalCalls: calls.length
+    });
+  } catch (error) {
+    console.error("❌ getLeadDetails error:", error);
+    res.status(500).json({ error: "Failed to fetch lead details" });
   }
 };

@@ -12,7 +12,11 @@ const leadSchema = new mongoose.Schema({
     name: String,
     employees: Number,
     website: String
-  }
+  },
+  // Soft-delete tracking
+  isArchived: { type: Boolean, default: false },
+  archivedAt: Date,
+  archivedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }
 }, { timestamps: true });
 
 leadSchema.set('toJSON', {
