@@ -4,33 +4,84 @@ const AgentSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
 
+    // Basic Info
     name: String,
     title: String,
     avatar: String,
-
-    language: String,
-    voiceId: String,
-
     prompt: String,
     welcomeMessage: String,
-
     characteristics: [String],
+    knowledgeBase: Array,
 
-    maxCallDuration: Number,
-    silenceDetectionMs: Number,
+    // ===== VOICE CONFIGURATION =====
+    voiceProfile: {
+      voiceId: String,           // voice_1, voice_2, etc.
+      displayName: String,       // "Adit (Male, Professional)"
+      googleVoiceId: String,     // "en-IN-Neural2-B"
+      language: String           // "en-IN", "hi-IN", "hinglish"
+    },
 
-    voicemailDetection: Boolean,
-    voicemailAction: String,
-    voicemailMessage: String,
+    speechSettings: {
+      voiceSpeed: {
+        type: Number,
+        default: 1.0,            // 0.75x → 1.25x
+        min: 0.75,
+        max: 1.25
+      },
 
-    voiceSpeed: Number,
-    interruptionSensitivity: Number,
-    responsiveness: Number,
-    emotionLevel: Number,
+      interruptionSensitivity: {
+        type: Number,
+        default: 0.5,            // 0 (Low) → 1 (High)
+        min: 0,
+        max: 1
+      },
 
-    backgroundNoise: String,
+      responsiveness: {
+        type: Number,
+        default: 0.5,            // 0 (Slow) → 1 (Fast)
+        min: 0,
+        max: 1
+      },
 
-    knowledgeBase: Array
+      emotions: {
+        type: Number,
+        default: 0.5,            // 0 (Calm) → 1 (Emotional)
+        min: 0,
+        max: 1
+      },
+
+      backgroundNoise: {
+        type: String,
+        enum: ["office", "quiet", "cafe", "street", "call-center"],
+        default: "office"
+      }
+    },
+
+    // ===== CALL SETTINGS =====
+    callSettings: {
+      maxCallDuration: {
+        type: Number,
+        default: 3600            // 1 hour in seconds
+      },
+
+      silenceDetectionMs: {
+        type: Number,
+        default: 15              // seconds
+      },
+
+      voicemailDetection: {
+        type: Boolean,
+        default: true
+      },
+
+      voicemailAction: {
+        type: String,
+        enum: ["leave-message", "hang-up", "transfer"],
+        default: "leave-message"
+      },
+
+      voicemailMessage: String
+    }
   },
   { timestamps: true }
 );

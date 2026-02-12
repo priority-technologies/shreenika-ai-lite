@@ -1,0 +1,94 @@
+{
+  "voices": [
+    {
+      "id": "voice_1",
+      "displayName": "Adit (Male, Professional)",
+      "gender": "Male",
+      "ageGroup": "25-35",
+      "language": "en-IN",
+      "googleVoiceId": "en-IN-Neural2-B",
+      "characteristics": ["Professional", "Formal", "Clear"],
+      "bestFor": "Sales, Customer Service, Formal Calls",
+      "sampleText": "Hello, I'm Adit, your professional business assistant. How can I help you today?"
+    },
+    {
+      "id": "voice_2",
+      "displayName": "Priya (Female, Professional)",
+      "gender": "Female",
+      "ageGroup": "25-35",
+      "language": "en-IN",
+      "googleVoiceId": "en-IN-Neural2-A",
+      "characteristics": ["Professional", "Warm", "Friendly"],
+      "bestFor": "Support, Sales, HR",
+      "sampleText": "Hi, I'm Priya. I'm here to assist you with all your needs. What can I do for you?"
+    },
+    {
+      "id": "voice_3",
+      "displayName": "Jackson (Male, Friendly)",
+      "gender": "Male",
+      "ageGroup": "20-30",
+      "language": "en-US",
+      "googleVoiceId": "en-US-Neural2-J",
+      "characteristics": ["Friendly", "Casual", "Energetic"],
+      "bestFor": "Lead Qualification, Friendly Outreach",
+      "sampleText": "Hey there! I'm Jackson. Ready to chat and help you out with whatever you need!"
+    },
+    {
+      "id": "voice_4",
+      "displayName": "Aria (Female, Friendly)",
+      "gender": "Female",
+      "ageGroup": "20-30",
+      "language": "en-US",
+      "googleVoiceId": "en-US-Neural2-F",
+      "characteristics": ["Friendly", "Warm", "Approachable"],
+      "bestFor": "Customer Engagement, Lead Gen",
+      "sampleText": "Hello! I'm Aria. So happy to help you out. What brings you here today?"
+    },
+    {
+      "id": "voice_5",
+      "displayName": "Vikram (Male, Formal)",
+      "gender": "Male",
+      "ageGroup": "35-45",
+      "language": "hi-IN",
+      "googleVoiceId": "en-IN-Neural2-D",
+      "characteristics": ["Formal", "Authoritative", "Trustworthy"],
+      "bestFor": "Debt Recovery, Important Notices, Official Communication",
+      "supportedLanguages": ["Hindi", "Hinglish", "English"],
+      "sampleText": "Namaskar, main hoon Vikram. Aapke mahatvapoorn prashn ka uttar dene ke liye yahan hoon."
+    },
+    {
+      "id": "voice_6",
+      "displayName": "Anjali (Female, Warm)",
+      "gender": "Female",
+      "ageGroup": "30-40",
+      "language": "hi-IN",
+      "googleVoiceId": "en-IN-Neural2-C",
+      "characteristics": ["Warm", "Caring", "Patient"],
+      "bestFor": "Support, Healthcare, Empathetic Calls",
+      "supportedLanguages": ["Hindi", "Hinglish", "English"],
+      "sampleText": "Namaste, main Anjali hoon. Aapke har sawal ka jawab dene ke liye main yahan hoon."
+    },
+    {
+      "id": "voice_7",
+      "displayName": "Rohan (Male, Young)",
+      "gender": "Male",
+      "ageGroup": "18-25",
+      "language": "en-IN",
+      "googleVoiceId": "en-IN-Neural2-E",
+      "characteristics": ["Energetic", "Modern", "Casual"],
+      "bestFor": "Tech Support, Young Audience, Startup Vibes",
+      "sampleText": "Yo! I'm Rohan. Let's solve this quickly and make your day awesome!"
+    },
+    {
+      "id": "voice_8",
+      "displayName": "Zara (Female, Bold)",
+      "gender": "Female",
+      "ageGroup": "25-35",
+      "language": "en-US",
+      "googleVoiceId": "en-US-Neural2-C",
+      "characteristics": ["Confident", "Bold", "Professional"],
+      "bestFor": "Executive Calls, High-Impact Outreach, Leadership",
+      "sampleText": "I'm Zara. Let's make something great happen together. What's your vision?"
+    }
+  ]
+}

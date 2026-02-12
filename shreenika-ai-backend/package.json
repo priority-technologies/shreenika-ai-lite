@@ -8,6 +8,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@google-cloud/text-to-speech": "^6.4.0",
     "@google-cloud/vision": "^4.3.2",
     "@google/generative-ai": "^0.17.0",
     "bcryptjs": "^2.4.3",
@@ -24,7 +25,7 @@
     "socket.io": "^4.8.3",
     "stripe": "^20.2.0",
     "twilio": "^4.23.0",
-    "ws": "^8.18.0"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/node": "^25.1.0",

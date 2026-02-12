@@ -1,0 +1,78 @@
+{
+  "languages": [
+    {
+      "code": "hinglish",
+      "name": "Hinglish (Hindi-English)",
+      "priority": 1,
+      "nativeLanguage": "hi-IN",
+      "fallbackLanguage": "en-IN",
+      "sttLanguageCode": "hi-IN",
+      "ttsLanguageCode": "en-IN",
+      "geminiBehavior": "Mix Hindi and English naturally",
+      "description": "HIGHEST PRIORITY - Natural Hindi-English blend for Indian users"
+    },
+    {
+      "code": "hi-IN",
+      "name": "Hindi",
+      "priority": 2,
+      "sttLanguageCode": "hi-IN",
+      "ttsLanguageCode": "hi-IN",
+      "geminiBehavior": "Respond only in Hindi",
+      "description": "Pure Hindi for native Hindi speakers"
+    },
+    {
+      "code": "en-IN",
+      "name": "English (India)",
+      "priority": 3,
+      "sttLanguageCode": "en-IN",
+      "ttsLanguageCode": "en-IN",
+      "geminiBehavior": "Use Indian English accent and phrases",
+      "description": "English with Indian context and expressions"
+    },
+    {
+      "code": "en-US",
+      "name": "English (USA)",
+      "priority": 4,
+      "sttLanguageCode": "en-US",
+      "ttsLanguageCode": "en-US",
+      "geminiBehavior": "Use American English accent and phrases",
+      "description": "Standard American English"
+    },
+    {
+      "code": "es-ES",
+      "name": "Spanish",
+      "priority": 5,
+      "sttLanguageCode": "es-ES",
+      "ttsLanguageCode": "es-ES",
+      "geminiBehavior": "Respond in Spanish",
+      "description": "Spanish for European and Latin American users"
+    },
+    {
+      "code": "fr-FR",
+      "name": "French",
+      "priority": 6,
+      "sttLanguageCode": "fr-FR",
+      "ttsLanguageCode": "fr-FR",
+      "geminiBehavior": "Respond in French",
+      "description": "French for European users"
+    },
+    {
+      "code": "de-DE",
+      "name": "German",
+      "priority": 7,
+      "sttLanguageCode": "de-DE",
+      "ttsLanguageCode": "de-DE",
+      "geminiBehavior": "Respond in German",
+      "description": "German for Central European users"
+    },
+    {
+      "code": "pt-BR",
+      "name": "Portuguese (Brazil)",
+      "priority": 8,
+      "sttLanguageCode": "pt-BR",
+      "ttsLanguageCode": "pt-BR",
+      "geminiBehavior": "Respond in Brazilian Portuguese",
+      "description": "Portuguese for Brazilian users"
+    }
+  ]
+}

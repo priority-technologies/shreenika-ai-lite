@@ -20,9 +20,11 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import contactRoutes from "./modules/contacts/contact.routes.js";
 import voipRoutes from "./modules/voip/voip.routes.js";
+import voiceRoutes from "./modules/voice/voice.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
-import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
+import { handleMediaStream } from "./modules/call/twilio.controller.js";
+import { WebSocketServer } from "ws";
 
 /* =======================
    APP & SERVER CREATION
@@ -138,6 +140,7 @@ app.use("/calls", callRoutes);
 app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
+app.use("/voice", voiceRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/settings/api-keys", apiKeyRoutes);
 app.use("/api/v1", apiV1Routes);
@@ -189,6 +192,23 @@ app.use((err, req, res, next) => {
 });
 
 /* =======================
+   WEBSOCKET SERVER FOR MEDIA STREAMS (Twilio Voice)
+======================= */
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (req, res, head) => {
+  // Handle media stream WebSocket upgrade
+  if (req.url.startsWith('/media-stream/')) {
+    wss.handleUpgrade(req, res, head, (ws) => {
+      // Extract callSid from URL
+      const callSid = req.url.split('/').pop();
+      req.params = { callSid };
+      handleMediaStream(req, res, ws);
+    });
+  }
+});
+
+/* =======================
    SERVER STARTUP (AFTER ALL ROUTES CONFIGURED)
 ======================= */
 const PORT = process.env.PORT || 8080;
@@ -201,6 +221,7 @@ httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`🔌 WebSocket: ws://localhost:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || "development"}`);
   console.log(`🔗 Frontend: ${process.env.FRONTEND_URL || "http://localhost:3000"}`);
+  console.log("🎙️  Voice Engine: Ready for calls");
   console.log("════════════════════════════════════════");
 });
 

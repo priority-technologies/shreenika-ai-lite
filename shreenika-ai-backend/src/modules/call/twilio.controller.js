@@ -1,8 +1,11 @@
 import Call from "./call.model.js";
+import Agent from "../agent/agent.model.js";
+import VoiceSession from "../voice/voice_sessions.model.js";
 import Usage from "../usage/usage.model.js";
 import { getTwilioClient } from "../../config/twilio.client.js";
 import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
+import { VoicePipeline } from "../voice/voicePipeline.js";
 
 const getMonthKey = () => {
   const d = new Date();
@@ -204,5 +207,161 @@ export const twilioStatus = async (req, res) => {
   } catch (err) {
     console.error("Twilio status error:", err.message);
     res.sendStatus(200);
+  }
+};
+
+/**
+ * MEDIA STREAM HANDLER - WebSocket for real-time voice
+ * Receives audio from Twilio, processes through VoicePipeline (STT→Gemini→TTS)
+ */
+export const handleMediaStream = async (req, res, ws) => {
+  let callSid;
+  let voicePipeline;
+  let voiceSession;
+  let agent;
+
+  try {
+    callSid = req.params.callSid;
+    console.log(`🎤 Media Stream connected: ${callSid}`);
+
+    // Find call and agent
+    const call = await Call.findOne({ twilioCallSid: callSid });
+    if (!call) {
+      console.error(`❌ Call not found: ${callSid}`);
+      ws.close(1000, 'Call not found');
+      return;
+    }
+
+    // Get agent configuration
+    agent = await Agent.findById(call.agentId);
+    if (!agent) {
+      console.error(`❌ Agent not found: ${call.agentId}`);
+      ws.close(1000, 'Agent not found');
+      return;
+    }
+
+    // Initialize VoicePipeline for this agent
+    voicePipeline = new VoicePipeline(agent, {
+      sessionId: `call_${callSid}`
+    });
+
+    // Start pipeline
+    const startResult = await voicePipeline.start();
+    if (!startResult.success) {
+      console.error(`❌ Failed to start VoicePipeline: ${startResult.error}`);
+      ws.close(1000, 'Pipeline initialization failed');
+      return;
+    }
+
+    // Create voice session record
+    voiceSession = await VoiceSession.create({
+      sessionId: voicePipeline.sessionId,
+      callId: call._id,
+      agentId: agent._id,
+      userId: call.userId,
+      voiceProfile: agent.voiceProfile,
+      speechSettings: agent.speechSettings,
+      status: 'active',
+      startedAt: new Date()
+    });
+
+    console.log(`✅ VoicePipeline initialized for agent: ${agent.name}`);
+
+    // Handle WebSocket messages from Twilio
+    ws.on('message', async (message) => {
+      try {
+        const data = JSON.parse(message);
+
+        // Twilio sends audio events
+        if (data.event === 'media') {
+          const audioBuffer = Buffer.from(data.media.payload, 'base64');
+
+          // Process through voice pipeline
+          const cycleResult = await voicePipeline.processConversationCycle(audioBuffer);
+
+          if (cycleResult.success) {
+            // Update voice session with transcript
+            voiceSession.transcript.push(
+              {
+                role: 'user',
+                text: cycleResult.transcript,
+                confidence: cycleResult.confidence
+              },
+              {
+                role: 'assistant',
+                text: cycleResult.response
+              }
+            );
+
+            // Send audio response back to Twilio
+            if (cycleResult.audioOutput) {
+              ws.send(
+                JSON.stringify({
+                  event: 'media',
+                  streamSid: data.streamSid,
+                  media: {
+                    payload: cycleResult.audioOutput.toString('base64')
+                  }
+                })
+              );
+            }
+
+            // Log metrics
+            console.log(
+              `📊 Cycle complete - STT: ${cycleResult.metrics.sttLatency}ms, LLM: ${cycleResult.metrics.llmLatency}ms, TTS: ${cycleResult.metrics.ttsLatency}ms`
+            );
+          } else {
+            console.error(`❌ Cycle error: ${cycleResult.error}`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error processing media:', error.message);
+      }
+    });
+
+    // Handle WebSocket close
+    ws.on('close', async () => {
+      try {
+        console.log(`📞 Media Stream closed: ${callSid}`);
+
+        // End pipeline session
+        const sessionSnapshot = await voicePipeline.end();
+
+        // Update voice session
+        voiceSession.status = 'completed';
+        voiceSession.endedAt = new Date();
+        voiceSession.metrics = sessionSnapshot.metrics;
+        voiceSession.transcript = sessionSnapshot.conversationHistory.map((msg) => ({
+          role: msg.role,
+          text: msg.content
+        }));
+        await voiceSession.save();
+
+        console.log(`✅ Voice session saved: ${voiceSession._id}`);
+      } catch (error) {
+        console.error('Error ending voice session:', error.message);
+      }
+    });
+
+    // Handle WebSocket errors
+    ws.on('error', async (error) => {
+      console.error('❌ WebSocket error:', error.message);
+
+      if (voiceSession) {
+        voiceSession.status = 'failed';
+        voiceSession.endReason = error.message;
+        voiceSession.endedAt = new Date();
+        await voiceSession.save();
+      }
+    });
+  } catch (error) {
+    console.error('❌ Media stream handler error:', error.message);
+    ws.close(1011, 'Internal server error');
+
+    if (voiceSession) {
+      voiceSession.status = 'failed';
+      voiceSession.endReason = error.message;
+      await voiceSession.save();
+    }
   }
 };
