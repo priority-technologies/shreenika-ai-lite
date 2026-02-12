@@ -66,8 +66,9 @@ export const googleCallback = async (req, res) => {
       { expiresIn: "48h" } // ⏱ mandatory rule
     );
 
+    // Redirect to root with token in query params so frontend can extract and store it
     res.redirect(
-      `${FRONTEND_URL}/google-auth-success?token=${token}&firstLogin=${!user.hasOnboarded}`
+      `${FRONTEND_URL}/?token=${token}&firstLogin=${!user.hasOnboarded}`
     );
   } catch (err) {
     console.error("Google callback error:", err);
