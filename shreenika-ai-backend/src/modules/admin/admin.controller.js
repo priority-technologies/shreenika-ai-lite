@@ -272,20 +272,31 @@ export const changeAccountType = async (req, res) => {
       return res.status(400).json({ message: "Invalid plan type" });
     }
 
-    const subscription = await Subscription.findOneAndUpdate(
-      { userId },
-      { plan: newPlan },
-      { new: true }
-    );
+    // ✅ IMPORTANT: Fetch, modify, and SAVE to trigger pre-save hook
+    // Do NOT use findOneAndUpdate as it bypasses Mongoose hooks!
+    const subscription = await Subscription.findOne({ userId });
 
     if (!subscription) {
       return res.status(404).json({ message: "Subscription not found" });
     }
 
+    // Update plan and save (this triggers pre-save hook that updates agentLimit, docLimit, etc.)
+    subscription.plan = newPlan;
+    await subscription.save();
+
+    console.log(`✅ User ${userId} plan changed to ${newPlan}`);
+    console.log(`   Agent Limit: ${subscription.agentLimit}`);
+    console.log(`   Doc Limit: ${subscription.docLimit}`);
+    console.log(`   Knowledge Base: ${subscription.knowledgeBaseEnabled}`);
+
     res.json({
       message: `Account successfully changed to ${newPlan}`,
       plan: newPlan,
-      updatedAt: new Date()
+      agentLimit: subscription.agentLimit,
+      docLimit: subscription.docLimit,
+      knowledgeBaseEnabled: subscription.knowledgeBaseEnabled,
+      addOnsEnabled: subscription.addOnsEnabled,
+      updatedAt: subscription.updatedAt
     });
   } catch (error) {
     console.error("❌ changeAccountType error:", error);
