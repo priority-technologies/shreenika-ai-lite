@@ -49,6 +49,9 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
         payload.apiKey = formData.apiKey;
         payload.secretKey = formData.secretKey;
         payload.endpointUrl = formData.endpointUrl;
+        if (formData.did) {
+          payload.did = formData.did;
+        }
       }
 
       if (showAdvanced && formData.customScript) {
@@ -193,6 +196,17 @@ const VoipSetupPopup: React.FC<VoipSetupPopupProps> = ({ isOpen, onClose, onSkip
                 placeholder="https://api.yourprovider.com/v1"
                 className="w-full border border-slate-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">DID (Phone Number)</label>
+              <input
+                type="text"
+                value={formData.did}
+                onChange={(e) => setFormData({ ...formData, did: e.target.value })}
+                placeholder="+1234567890 or your provider's DID format"
+                className="w-full border border-slate-300 rounded-lg p-3 font-mono text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-slate-500 mt-1">Optional - Will be auto-fetched from your provider if not specified</p>
             </div>
 
             {/* Advanced Options */}
