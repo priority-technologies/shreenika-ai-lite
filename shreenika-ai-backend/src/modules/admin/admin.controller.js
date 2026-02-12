@@ -273,30 +273,47 @@ export const changeAccountType = async (req, res) => {
     }
 
     // ✅ IMPORTANT: Fetch, modify, and SAVE to trigger pre-save hook
-    // Do NOT use findOneAndUpdate as it bypasses Mongoose hooks!
+    console.log(`\n🔍 CHANGE ACCOUNT TYPE - DETAILED DEBUG:`);
+    console.log(`   Input - userId: ${userId}, newPlan: ${newPlan}`);
+
     const subscription = await Subscription.findOne({ userId });
 
     if (!subscription) {
+      console.error(`❌ NO SUBSCRIPTION FOUND for userId: ${userId}`);
       return res.status(404).json({ message: "Subscription not found" });
     }
 
-    // Update plan and save (this triggers pre-save hook that updates agentLimit, docLimit, etc.)
-    subscription.plan = newPlan;
-    await subscription.save();
+    console.log(`   BEFORE UPDATE:`);
+    console.log(`      plan: ${subscription.plan}`);
+    console.log(`      agentLimit: ${subscription.agentLimit}`);
+    console.log(`      docLimit: ${subscription.docLimit}`);
 
-    console.log(`✅ User ${userId} plan changed to ${newPlan}`);
-    console.log(`   Agent Limit: ${subscription.agentLimit}`);
-    console.log(`   Doc Limit: ${subscription.docLimit}`);
-    console.log(`   Knowledge Base: ${subscription.knowledgeBaseEnabled}`);
+    // Update plan - EXPLICIT assignment
+    subscription.plan = newPlan;
+    subscription.markModified('plan'); // FORCE Mongoose to detect change
+
+    console.log(`   BEFORE SAVE (after assignment):`);
+    console.log(`      plan: ${subscription.plan}`);
+    console.log(`      isModified('plan'): ${subscription.isModified('plan')}`);
+
+    // Save - should trigger pre-save hook
+    const savedSubscription = await subscription.save();
+
+    console.log(`   AFTER SAVE:`);
+    console.log(`      plan: ${savedSubscription.plan}`);
+    console.log(`      agentLimit: ${savedSubscription.agentLimit}`);
+    console.log(`      docLimit: ${savedSubscription.docLimit}`);
+    console.log(`      knowledgeBaseEnabled: ${savedSubscription.knowledgeBaseEnabled}`);
+    console.log(`      addOnsEnabled: ${savedSubscription.addOnsEnabled}`);
 
     res.json({
       message: `Account successfully changed to ${newPlan}`,
-      plan: newPlan,
-      agentLimit: subscription.agentLimit,
-      docLimit: subscription.docLimit,
-      knowledgeBaseEnabled: subscription.knowledgeBaseEnabled,
-      addOnsEnabled: subscription.addOnsEnabled,
-      updatedAt: subscription.updatedAt
+      plan: savedSubscription.plan,
+      agentLimit: savedSubscription.agentLimit,
+      docLimit: savedSubscription.docLimit,
+      knowledgeBaseEnabled: savedSubscription.knowledgeBaseEnabled,
+      addOnsEnabled: savedSubscription.addOnsEnabled,
+      updatedAt: savedSubscription.updatedAt
     });
   } catch (error) {
     console.error("❌ changeAccountType error:", error);

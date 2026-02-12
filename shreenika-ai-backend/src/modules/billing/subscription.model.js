@@ -74,13 +74,26 @@ const subscriptionSchema = new mongoose.Schema(
 
 // Pre-save hook: Update limits based on plan
 subscriptionSchema.pre("save", function (next) {
+  console.log(`\n🪝 SUBSCRIPTION PRE-SAVE HOOK:`);
+  console.log(`   isModified('plan'): ${this.isModified("plan")}`);
+  console.log(`   Current plan: ${this.plan}`);
+
   if (this.isModified("plan")) {
+    console.log(`   ✅ Plan WAS modified - calculating limits...`);
     const limits = getPlanLimits(this.plan);
+    console.log(`   Limits from getPlanLimits(${this.plan}):`, limits);
+
     this.agentLimit = limits.agentLimit;
     this.docLimit = limits.docLimit;
     this.knowledgeBaseEnabled = limits.knowledgeBase;
     this.addOnsEnabled = limits.addOns;
     this.activationFeeAmount = limits.activationFee || 0;
+
+    console.log(`   Updated fields:`);
+    console.log(`      agentLimit: ${this.agentLimit}`);
+    console.log(`      docLimit: ${this.docLimit}`);
+  } else {
+    console.log(`   ❌ Plan was NOT modified - skipping limit recalculation`);
   }
   next();
 });
