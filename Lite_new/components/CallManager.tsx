@@ -286,20 +286,34 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
      CAMPAIGN LOGIC (INTENT ONLY)
   ========================= */
   const toggleLeadSelection = (id: string) => {
+    console.log('🔧 toggleLeadSelection called with id:', id);
+    console.log('Current selectedLeadIds:', Array.from(selectedLeadIds));
+    console.log('Total leads:', leads.length);
+
     const newSelection = new Set(selectedLeadIds);
     if (newSelection.has(id)) {
+      console.log('Removing lead:', id);
       newSelection.delete(id);
     } else {
+      console.log('Adding lead:', id);
       newSelection.add(id);
     }
+    console.log('New selection:', Array.from(newSelection));
     setSelectedLeadIds(newSelection);
   };
 
   const toggleSelectAll = () => {
+    console.log('🔧 toggleSelectAll called');
+    console.log('Current size:', selectedLeadIds.size, 'Total leads:', leads.length);
+
     if (selectedLeadIds.size === leads.length) {
+      console.log('Deselecting all');
       setSelectedLeadIds(new Set());
     } else {
-      setSelectedLeadIds(new Set(leads.map(l => l.id)));
+      console.log('Selecting all');
+      const allIds = leads.map(l => l.id);
+      console.log('All lead IDs:', allIds);
+      setSelectedLeadIds(new Set(allIds));
     }
   };
 
