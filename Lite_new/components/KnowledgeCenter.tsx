@@ -1,34 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { AgentConfig, KnowledgeDocument } from '../types';
-import { KNOWLEDGE_BASE_LIMITS } from '../constants';
 import { FileText, Plus, Search, Trash2, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import AssignAgentModal from '../components/AssignAgentModal';
-import { getAgents } from '../services/api';
-
-// ================= PLAN GUARD LOGIC =================
-const storedUser = JSON.parse(localStorage.getItem('voxai_user') || '{}');
+import { getAgents, getBillingStatus } from '../services/api';
 
 type PlanType = 'Starter' | 'Pro' | 'Enterprise';
-
-const currentPlan: PlanType = storedUser?.plan || 'Starter';
-
-const PLAN_LIMITS = {
-  Starter: {
-    allowKnowledge: false,
-    maxDocs: 0,
-  },
-  Pro: {
-    allowKnowledge: true,
-    maxDocs: 25,
-  },
-  Enterprise: {
-    allowKnowledge: true,
-    maxDocs: Infinity,
-  },
-};
-
-const planRules = PLAN_LIMITS[currentPlan];
-// ====================================================
 
 interface KnowledgeCenterProps {
   agent: AgentConfig;
@@ -37,15 +13,41 @@ interface KnowledgeCenterProps {
 
 const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) => {
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
-  const storedUser = JSON.parse(localStorage.getItem('voxai_user') || '{}');
-  const currentPlan = storedUser?.plan || 'Starter';
-  const kbRules = KNOWLEDGE_BASE_LIMITS[currentPlan];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [uploading, setUploading] = useState(false);
   const [pendingDoc, setPendingDoc] = useState<any>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [allAgents, setAllAgents] = useState<AgentConfig[]>([agent]);
+
+  // Plan-based access control - fetched from billing API
+  const [planLoading, setPlanLoading] = useState(true);
+  const [knowledgeEnabled, setKnowledgeEnabled] = useState(false);
+  const [maxDocs, setMaxDocs] = useState(0);
+  const [currentPlan, setCurrentPlan] = useState<PlanType>('Starter');
+
+  // Fetch subscription/plan data from backend
+  useEffect(() => {
+    const fetchPlanData = async () => {
+      try {
+        setPlanLoading(true);
+        const subscription = await getBillingStatus();
+        const plan = subscription.plan || 'Starter';
+        setCurrentPlan(plan as PlanType);
+        setKnowledgeEnabled(subscription.knowledgeBaseEnabled ?? false);
+        setMaxDocs(subscription.docLimit ?? 0);
+      } catch (err) {
+        console.error('Failed to fetch billing status:', err);
+        // Default to Starter on error
+        setCurrentPlan('Starter');
+        setKnowledgeEnabled(false);
+        setMaxDocs(0);
+      } finally {
+        setPlanLoading(false);
+      }
+    };
+    fetchPlanData();
+  }, []);
 
   // Fetch all agents from backend for assignment modal
   useEffect(() => {
@@ -63,19 +65,19 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
   }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!kbRules.allowUpload) {
+    if (!knowledgeEnabled) {
       alert('Please upgrade your plan to use Knowledge Base.');
       return;
     }
-    if ((agent.knowledgeBase?.length || 0) >= kbRules.maxDocs) {
+    if (maxDocs !== Infinity && (agent.knowledgeBase?.length || 0) >= maxDocs) {
       alert('Knowledge Base document limit reached.');
       return;
     }
     if (e.target.files && e.target.files[0]) {
       setUploading(true);
       const file = e.target.files[0];
-      
-      // Simulate network upload
+
+      // Simulate network upload (backend upload endpoint not yet implemented)
       setTimeout(() => {
         const newDoc: KnowledgeDocument = {
           id: Math.random().toString(36).substr(2, 9),
@@ -84,8 +86,7 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
           type: file.type || 'application/pdf',
           status: 'synced',
           uploadedAt: new Date().toISOString(),
-          // ===== NEW =====
-          assignedAgentIds: [], // MUST assign before use
+          assignedAgentIds: [],
           uploadedFrom: 'global',
         };
 
@@ -103,9 +104,25 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
     });
   };
 
-  const filteredDocs = (agent.knowledgeBase || []).filter(doc => 
+  const filteredDocs = (agent.knowledgeBase || []).filter(doc =>
     doc.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Show loading while fetching plan data
+  if (planLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Knowledge Center</h1>
+          <p className="text-slate-500">Manage documents and resources for your AI agent.</p>
+        </div>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-slate-600">Loading plan data...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -114,16 +131,16 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
           <h1 className="text-2xl font-bold text-slate-900">Knowledge Center</h1>
           <p className="text-slate-500">Manage documents and resources for your AI agent.</p>
         </div>
-        
-        {(agent.knowledgeBase?.length > 0) && (
+
+        {(agent.knowledgeBase?.length > 0) && knowledgeEnabled && (
           <div className="flex space-x-3">
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
               onChange={handleFileUpload}
             />
-            <button 
+            <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
               className="flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-sm"
@@ -149,16 +166,16 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Your Knowledge Center is Empty</h3>
             <p className="text-slate-500 max-w-sm mb-8">Get started by adding your first infobase document.</p>
-            
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
               onChange={handleFileUpload}
             />
-            <button 
+            <button
               onClick={() => {
-                if (!planRules.allowKnowledge) {
+                if (!knowledgeEnabled) {
                   setIsBuyModalOpen(true);
                   return;
                 }
@@ -176,9 +193,9 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
             <div className="p-4 border-b border-slate-200 flex items-center bg-slate-50">
                <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                  <input 
-                    type="text" 
-                    placeholder="Search documents..." 
+                  <input
+                    type="text"
+                    placeholder="Search documents..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-9 w-full rounded-md border-slate-300 border p-2 text-sm focus:ring-indigo-500 focus:border-indigo-500"
@@ -285,7 +302,8 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
           <div className="bg-white p-6 rounded-xl max-w-md text-center">
             <h3 className="text-xl font-bold mb-2">Upgrade Required</h3>
             <p className="text-gray-600 mb-6">
-              Your current plan does not allow uploading documents to the Knowledge Base.
+              Your current plan ({currentPlan}) does not allow uploading documents to the Knowledge Base.
+              Please upgrade to Pro or Enterprise to use this feature.
             </p>
             <button
               onClick={() => setIsBuyModalOpen(false)}

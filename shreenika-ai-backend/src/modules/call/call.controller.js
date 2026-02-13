@@ -42,6 +42,11 @@ export const startCampaign = async (req, res) => {
       message: `Campaign started with ${leadIds.length} leads`,
     });
 
+    // Validate PUBLIC_BASE_URL before starting campaign
+    if (!process.env.PUBLIC_BASE_URL) {
+      console.error("❌ PUBLIC_BASE_URL env var is not set, campaign webhooks will fail");
+    }
+
     // Process calls sequentially
     for (let i = 0; i < leadIds.length; i++) {
       const campaign = activeCampaigns.get(userId.toString());

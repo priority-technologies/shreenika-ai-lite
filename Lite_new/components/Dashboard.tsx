@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Users, PhoneCall, CalendarCheck, TrendingUp, Phone, CreditCard, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { CallLog } from '../types';
-import { getAgents, getBillingStatus, getCurrentUsage, getVoipNumbers, getCalls } from '../services/api';
+import { getAgents, getCurrentUsage, getVoipNumbers, getCalls, getContacts } from '../services/api';
 
 interface DashboardProps {
   logs: CallLog[];
@@ -43,17 +43,19 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
 
     try {
       // Fetch all data in parallel
-      const [agentsResponse, usageResponse, voipResponse, callsResponse] = await Promise.all([
+      const [agentsResponse, usageResponse, voipResponse, callsResponse, contactsResponse] = await Promise.all([
         getAgents().catch(() => ({ agents: [] })),
         getCurrentUsage().catch(() => ({ agentCount: 0, voiceMinutes: 0, limits: { agents: 1 }, plan: 'Starter' })),
         getVoipNumbers().catch(() => ({ numbers: [] })),
-        getCalls().catch(() => [])
+        getCalls().catch(() => []),
+        getContacts().catch(() => ({ contacts: [] }))
       ]);
 
       // Extract data
       const agents = agentsResponse.agents || agentsResponse || [];
       const voipNumbers = voipResponse.numbers || [];
       const calls = callsResponse || [];
+      const contacts = Array.isArray(contactsResponse) ? contactsResponse : (contactsResponse.contacts || []);
 
       // Calculate meetings booked (calls with positive outcome)
       const meetingsBooked = calls.filter((call: any) =>
@@ -72,7 +74,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
         agentCount: Array.isArray(agents) ? agents.length : usageResponse.agentCount || 0,
         totalCalls: calls.length || logs.length,
         meetingsBooked: meetingsBooked || logs.filter(l => l.sentiment === 'Positive').length,
-        leadCount: leadCount,
+        leadCount: contacts.length,
         voipNumberCount: voipNumbers.length,
         currentPlan: usageResponse.plan || 'Starter',
         voiceMinutesUsed: usageResponse.voiceMinutes || 0,
@@ -88,7 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
         agentCount: 0,
         totalCalls: logs.length,
         meetingsBooked: logs.filter(l => l.sentiment === 'Positive').length,
-        leadCount: leadCount,
+        leadCount: 0,
         voipNumberCount: 0,
         currentPlan: 'Starter',
         voiceMinutesUsed: 0,
@@ -162,7 +164,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
     },
     {
       name: 'Total Leads',
-      value: dashboardData?.leadCount.toString() || leadCount.toString(),
+      value: dashboardData?.leadCount.toString() || '0',
       icon: TrendingUp,
       color: 'bg-amber-500',
       subtitle: 'In database'

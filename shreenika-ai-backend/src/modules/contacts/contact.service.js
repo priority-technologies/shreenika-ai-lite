@@ -45,11 +45,20 @@ export const getContactsService = async (ownerUserId, search) => {
    BULK IMPORT CONTACTS
 ========================= */
 export const importContactsService = async (ownerUserId, contacts) => {
-  const formattedContacts = contacts.map((contact) => ({
-    ...contact,
-    ownerUserId,
-    source: "csv"
-  }));
+  const formattedContacts = contacts.map((contact) => {
+    // Transform flat CSV fields to nested schema structure
+    const { companyName, totalEmployees, website, ...rest } = contact;
+    return {
+      ...rest,
+      company: {
+        name: companyName || "",
+        employees: totalEmployees || undefined,
+        website: website || ""
+      },
+      ownerUserId,
+      source: "csv"
+    };
+  });
 
   const inserted = await Contact.insertMany(formattedContacts);
 

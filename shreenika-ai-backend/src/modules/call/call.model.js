@@ -51,6 +51,14 @@ const callSchema = new mongoose.Schema(
       index: true
     },
 
+    phoneNumber: {
+      type: String
+    },
+
+    leadName: {
+      type: String
+    },
+
     durationSeconds: {
       type: Number,
       default: 0
@@ -84,6 +92,25 @@ const callSchema = new mongoose.Schema(
     sentiment: {
       type: String,
       enum: ["Positive", "Neutral", "Negative"]
+    },
+
+    rating: {
+      type: Number,
+      min: 0,
+      max: 5,
+      default: 0
+    },
+
+    dialStatus: {
+      type: String
+    },
+
+    endReason: {
+      type: String
+    },
+
+    usageCost: {
+      type: String
     },
 
     aiProcessed: {

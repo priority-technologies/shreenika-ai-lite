@@ -98,6 +98,12 @@ export const getAgentById = (id: string) =>
   apiFetch(`/api/agents/${id}`, undefined, "core");
 
 // ==============================
+// CONTACTS APIs (CORE)
+// ==============================
+export const getContacts = () =>
+  apiFetch("/contacts", undefined, "core");
+
+// ==============================
 // CALL MANAGEMENT APIs (CORE)
 // ==============================
 export const getCalls = () =>
