@@ -4,6 +4,7 @@ import Agent from "./agent.model.js";
 const flattenAgent = (agent) => ({
   id: agent._id,
   _id: agent._id,
+  isActive: agent.isActive !== false,
   name: agent.name,
   title: agent.title,
   avatar: agent.avatar,

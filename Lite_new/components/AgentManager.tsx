@@ -15,12 +15,8 @@ import {
   Trash2,
   Loader2,
   Plus,
-  User,
   UserPlus,
-  Headphones,
-  Calendar,
-  ShoppingBag,
-  AlertCircle
+  Lock
 } from 'lucide-react';
 
 
@@ -287,6 +283,35 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
   };
   // ============================================
 
+  // ========== DELETE AGENT ==========
+  const handleDeleteAgent = async (agentId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent selecting the agent
+    if (!window.confirm('Are you sure you want to delete this agent? This cannot be undone.')) return;
+
+    try {
+      await deleteAgent(agentId);
+
+      // Remove from local list
+      const updatedList = agentList.filter(a => a.id !== agentId);
+      setAgentList(updatedList);
+
+      // If deleted agent was selected, switch to first available agent
+      if (localAgent.id === agentId && updatedList.length > 0) {
+        const firstActive = updatedList.find(a => a.isActive !== false) || updatedList[0];
+        setLocalAgent(firstActive);
+        setAgent(firstActive);
+      } else if (updatedList.length === 0) {
+        // No agents left - reset to default
+        setLocalAgent({} as AgentConfig);
+        setAgent({} as AgentConfig);
+      }
+    } catch (error) {
+      console.error('Failed to delete agent:', error);
+      alert('Failed to delete agent. Please try again.');
+    }
+  };
+  // ====================================
+
   const addCharacteristic = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && newTag.trim()) {
       e.preventDefault();
@@ -423,25 +448,47 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
             )}
             
             {!isLoadingAgents && agentList.map(agt => {
-               const isActive = localAgent.id === agt.id;
+               const isSelected = localAgent.id === agt.id;
+               const isFrozen = agt.isActive === false;
                return (
-                  <div 
+                  <div
                      key={agt.id}
-                     onClick={() => handleSelectAgent(agt)}
-                     className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-all ${
-                        isActive 
-                           ? 'bg-blue-50 border border-blue-200 shadow-sm' 
-                           : 'hover:bg-slate-50 border border-transparent hover:border-slate-100'
+                     onClick={() => {
+                       if (isFrozen) {
+                         alert('This agent is frozen because your plan limit was exceeded. Upgrade your plan to reactivate it.');
+                         return;
+                       }
+                       handleSelectAgent(agt);
+                     }}
+                     className={`flex items-center space-x-3 p-3 rounded-lg transition-all group ${
+                        isFrozen
+                           ? 'opacity-50 cursor-not-allowed bg-slate-50 border border-slate-200'
+                           : isSelected
+                              ? 'bg-blue-50 border border-blue-200 shadow-sm cursor-pointer'
+                              : 'hover:bg-slate-50 border border-transparent hover:border-slate-100 cursor-pointer'
                      }`}
                   >
                      <div className="relative">
-                       <img src={agt.avatar} alt="Agent" className="w-10 h-10 rounded-full bg-slate-200 border border-white shadow-sm" />
-                       {isActive && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
+                       <img src={agt.avatar} alt="Agent" className={`w-10 h-10 rounded-full bg-slate-200 border border-white shadow-sm ${isFrozen ? 'grayscale' : ''}`} />
+                       {isFrozen && <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 border-2 border-white rounded-full flex items-center justify-center"><Lock className="w-2.5 h-2.5 text-white" /></div>}
+                       {!isFrozen && isSelected && <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>}
                      </div>
                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm truncate ${isActive ? 'font-bold text-slate-900' : 'font-medium text-slate-600 group-hover:text-slate-900'}`}>{agt.name}</div>
-                        <div className={`text-xs truncate ${isActive ? 'text-blue-600 font-medium' : 'text-slate-400'}`}>{agt.title}</div>
+                        <div className={`text-sm truncate ${isFrozen ? 'font-medium text-slate-400' : isSelected ? 'font-bold text-slate-900' : 'font-medium text-slate-600'}`}>{agt.name}</div>
+                        <div className={`text-xs truncate ${isFrozen ? 'text-orange-500 font-medium' : isSelected ? 'text-blue-600 font-medium' : 'text-slate-400'}`}>
+                          {isFrozen ? 'Frozen' : agt.title}
+                        </div>
                      </div>
+                     {/* Delete button */}
+                     {!isFrozen && (
+                       <button
+                         onClick={(e) => handleDeleteAgent(agt.id, e)}
+                         className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                         title="Delete agent"
+                       >
+                         <Trash2 className="w-3.5 h-3.5" />
+                       </button>
+                     )}
                   </div>
                );
             })}

@@ -51,6 +51,7 @@ export interface KnowledgeDocument {
 
 export interface AgentConfig {
   id?: string;
+  isActive?: boolean;
   name: string;
   title: string;
   avatar?: string;

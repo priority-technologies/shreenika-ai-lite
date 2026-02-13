@@ -2,6 +2,7 @@ import express from "express";
 import { requireAuth } from "../auth/auth.middleware.js";
 import { requireSuperAdmin } from "./admin.middleware.js";
 import {
+  getDashboardStats,
   listUsers,
   getUserDetails,
   getUserContacts,
@@ -31,6 +32,9 @@ router.get("/status", checkAdminStatus);
 
 // All routes below require super admin privileges
 router.use(requireSuperAdmin);
+
+// Dashboard stats
+router.get("/dashboard/stats", getDashboardStats);
 
 // User management
 router.get("/users", listUsers);

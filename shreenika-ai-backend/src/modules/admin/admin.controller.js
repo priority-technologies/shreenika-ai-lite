@@ -9,12 +9,44 @@ import CMS from "../cms/cms.model.js";
 import { Parser } from "json2csv";
 
 /**
+ * Dashboard stats for Super Admin
+ */
+export const getDashboardStats = async (req, res) => {
+  try {
+    const [totalUsers, totalContacts, totalCalls, totalAgents] = await Promise.all([
+      User.countDocuments(),
+      Contact.countDocuments(),
+      Call.countDocuments(),
+      Agent.countDocuments()
+    ]);
+
+    const subscriptions = await Subscription.aggregate([
+      { $group: { _id: "$plan", count: { $sum: 1 } } }
+    ]);
+
+    const planBreakdown = {};
+    subscriptions.forEach(s => { planBreakdown[s._id] = s.count; });
+
+    res.json({
+      totalUsers,
+      totalContacts,
+      totalCalls,
+      totalAgents,
+      planBreakdown
+    });
+  } catch (error) {
+    console.error("getDashboardStats error:", error);
+    res.status(500).json({ error: "Failed to fetch dashboard stats" });
+  }
+};
+
+/**
  * List all users (for Super Admin Lead Management)
  */
 export const listUsers = async (req, res) => {
   try {
     const users = await User.find()
-      .select("email role createdAt isActive")
+      .select("name phone email role createdAt isActive")
       .sort({ createdAt: -1 });
 
     // Get additional stats for each user
@@ -29,10 +61,13 @@ export const listUsers = async (req, res) => {
 
         return {
           _id: user._id,
+          name: user.name || user.email.split("@")[0],
+          phone: user.phone || null,
           email: user.email,
           role: user.role,
           isActive: user.isActive,
           createdAt: user.createdAt,
+          accountType: subscription?.plan || "Starter",
           stats: {
             contacts: contactCount,
             calls: callCount,
@@ -77,6 +112,7 @@ export const getUserDetails = async (req, res) => {
     res.json({
       user: {
         ...user.toObject(),
+        name: user.name || user.email.split("@")[0],
         agents,
         voipProvider: voipProvider?.provider,
         voipNumbers: voipNumbers?.map(v => ({
@@ -305,6 +341,21 @@ export const changeAccountType = async (req, res) => {
     console.log(`      docLimit: ${savedSubscription.docLimit}`);
     console.log(`      knowledgeBaseEnabled: ${savedSubscription.knowledgeBaseEnabled}`);
     console.log(`      addOnsEnabled: ${savedSubscription.addOnsEnabled}`);
+
+    // Freeze/unfreeze agents based on new plan limit
+    const newAgentLimit = savedSubscription.agentLimit;
+    const agents = await Agent.find({ userId }).sort({ createdAt: 1 });
+
+    if (agents.length > 0) {
+      for (let i = 0; i < agents.length; i++) {
+        const shouldBeActive = i < newAgentLimit;
+        if (agents[i].isActive !== shouldBeActive) {
+          agents[i].isActive = shouldBeActive;
+          await agents[i].save();
+        }
+      }
+      console.log(`   AGENT FREEZE: ${agents.length} agents, limit ${newAgentLimit}, froze ${Math.max(0, agents.length - newAgentLimit)} agents`);
+    }
 
     res.json({
       message: `Account successfully changed to ${newPlan}`,

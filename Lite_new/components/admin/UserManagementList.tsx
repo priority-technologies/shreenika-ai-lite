@@ -9,6 +9,11 @@ interface User {
   phone?: string;
   accountType?: string;
   createdAt?: string;
+  stats?: {
+    contacts: number;
+    calls: number;
+    agents: number;
+  };
 }
 
 interface UserManagementListProps {
@@ -174,6 +179,12 @@ const UserManagementList: React.FC<UserManagementListProps> = ({ navigate }) => 
                       Account Type
                     </th>
                     <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600">
+                      Agents
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600">
+                      Contacts
+                    </th>
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-slate-600">
                       Actions
                     </th>
                   </tr>
@@ -205,6 +216,12 @@ const UserManagementList: React.FC<UserManagementListProps> = ({ navigate }) => 
                         >
                           {user.accountType || 'Starter'}
                         </span>
+                      </td>
+                      <td className="px-6 py-3 text-center text-sm text-slate-700 font-medium">
+                        {user.stats?.agents ?? 0}
+                      </td>
+                      <td className="px-6 py-3 text-center text-sm text-slate-700 font-medium">
+                        {user.stats?.contacts ?? 0}
                       </td>
                       <td className="px-6 py-3 text-center">
                         <div className="flex items-center justify-center space-x-2">

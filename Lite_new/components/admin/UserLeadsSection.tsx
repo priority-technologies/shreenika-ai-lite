@@ -4,9 +4,14 @@ import { apiFetch } from '../../services/api';
 
 interface Lead {
   _id: string;
-  name: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
   phone?: string;
   email?: string;
+  company?: { name?: string };
+  status?: string;
+  callCount?: number;
   isArchived?: boolean;
   archivedAt?: string;
 }
@@ -36,11 +41,16 @@ const UserLeadsSection: React.FC<UserLeadsSectionProps> = ({ userId, navigate })
   const fetchLeads = async () => {
     try {
       setLoading(true);
-      const data = await apiFetch(`/admin/users/${userId}/leads`);
-      setLeads(data.leads || []);
+      const data = await apiFetch(`/admin/users/${userId}/contacts`);
+      // Map contacts to leads format
+      const contacts = (data.contacts || []).map((c: any) => ({
+        ...c,
+        name: `${c.firstName || ''} ${c.lastName || ''}`.trim() || c.email || 'Unknown',
+      }));
+      setLeads(contacts);
     } catch (err) {
-      console.error('Failed to fetch leads:', err);
-      setMessage('Failed to load leads');
+      console.error('Failed to fetch contacts:', err);
+      setMessage('Failed to load contacts');
       setTimeout(() => setMessage(''), 3000);
     } finally {
       setLoading(false);

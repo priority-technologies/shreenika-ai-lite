@@ -4,6 +4,12 @@ const AgentSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
 
+    // Agent active status (frozen agents can't be used for calls)
+    isActive: {
+      type: Boolean,
+      default: true
+    },
+
     // Basic Info
     name: String,
     title: String,
