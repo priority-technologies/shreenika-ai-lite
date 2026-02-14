@@ -213,7 +213,8 @@ export const addVoipProvider = async (req, res) => {
       try {
         const twilioClient = new Twilio(accountSid, authToken);
         const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
-        for (let idx = 0; const number of numbers) {
+        for (let idx = 0; idx < numbers.length; idx++) {
+          const number = numbers[idx];
           await VoipNumber.findOneAndUpdate(
             {
               userId: req.user._id,
@@ -246,7 +247,6 @@ export const addVoipProvider = async (req, res) => {
           if (idx === 0 && agentId) {
             console.log(`✅ Auto-assigned first number ${number.phoneNumber} to agent ${agentId}`);
           }
-          idx++;
         }
         console.log(`✅ Imported ${numbers.length} numbers from Twilio`);
       } catch (importError) {
@@ -256,7 +256,8 @@ export const addVoipProvider = async (req, res) => {
 
     // If SansPBX, import DIDs
     if (provider === "SansPBX" && isVerified && didList.length > 0) {
-      for (let idx = 0; const d of didList) {
+      for (let idx = 0; idx < didList.length; idx++) {
+        const d = didList[idx];
         const voipNumber = await VoipNumber.findOneAndUpdate(
           {
             userId: req.user._id,
@@ -281,14 +282,14 @@ export const addVoipProvider = async (req, res) => {
         if (idx === 0 && agentId) {
           console.log(`✅ Auto-assigned first DID ${voipNumber.phoneNumber} to agent ${agentId}`);
         }
-        idx++;
       }
       console.log(`✅ Imported ${didList.length} DIDs from SansPBX provider`);
     }
 
     // If Other, import DIDs
     if (provider === "Other" && isVerified && didList.length > 0) {
-      for (let idx = 0; const did of didList) {
+      for (let idx = 0; idx < didList.length; idx++) {
+        const did = didList[idx];
         await VoipNumber.findOneAndUpdate(
           {
             userId: req.user._id,
@@ -313,7 +314,6 @@ export const addVoipProvider = async (req, res) => {
         if (idx === 0 && agentId) {
           console.log(`✅ Auto-assigned first DID ${did.number || did.did || did} to agent ${agentId}`);
         }
-        idx++;
       }
       console.log(`✅ Imported ${didList.length} DIDs from Other provider`);
     }
