@@ -32,26 +32,53 @@ export const startOutboundCall = async (req, res) => {
     console.log(`📱 Phone normalized: "${toPhone}" → "${normalizedPhone}"`);
 
     // Get agent's assigned VOIP provider
+    console.log(`\n📱 [startOutboundCall] TRACING CALL EXECUTION FOR AGENT: ${agentId}`);
+    console.log(`📱 [startOutboundCall] ├─ To Phone: ${toPhone}`);
+    console.log(`📱 [startOutboundCall] ├─ Lead ID: ${leadId || 'none'}`);
+    console.log(`📱 [startOutboundCall] └─ Fetching assigned VOIP provider...`);
+
     const voipProvider = await getAgentProviderOrFallback(agentId);
 
     if (!voipProvider) {
+      console.error(`❌ [startOutboundCall] No VOIP provider found (not even fallback)`);
       return res.status(400).json({
-        error: "No VOIP provider assigned to this agent. Please assign a phone number in Settings > VOIP."
+        error: "No VOIP provider assigned to this agent. Please connect a VOIP provider in Settings > VOIP Integration."
       });
     }
 
+    console.log(`✅ [startOutboundCall] Provider: ${voipProvider.provider}`);
+    if (voipProvider.provider !== 'Twilio') {
+      console.log(`   └─ (This is the assigned provider, not a fallback)`);
+    }
+
     // Get agent's assigned phone number (DID)
+    console.log(`📱 [startOutboundCall] Fetching assigned DID for agent...`);
     const fromPhone = await getAgentPhoneNumber(agentId);
 
-    if (!fromPhone) {
-      // Fallback to env var if available (for backward compatibility)
-      if (process.env.TWILIO_FROM_NUMBER && voipProvider.provider === 'Twilio') {
-        console.warn(`⚠️ Agent ${agentId} has no assigned phone number, using system TWILIO_FROM_NUMBER`);
-      } else {
+    if (fromPhone) {
+      console.log(`✅ [startOutboundCall] DID found: ${fromPhone}`);
+    } else {
+      console.log(`⚠️  [startOutboundCall] No DID assigned to agent`);
+
+      // CRITICAL: Non-Twilio providers REQUIRE a DID, cannot use system fallback
+      if (voipProvider.provider !== 'Twilio') {
+        console.error(`❌ [startOutboundCall] ${voipProvider.provider} requires DID but agent has none`);
         return res.status(400).json({
-          error: "No phone number (DID) assigned to this agent."
+          error: `${voipProvider.provider} provider requires a DID (phone number) assigned to this agent. ` +
+                 `Please assign a phone number in Settings > VOIP Integration > Connected Phone Numbers.`
         });
       }
+
+      // Only Twilio can use system-wide fallback
+      if (!process.env.TWILIO_FROM_NUMBER) {
+        console.error(`❌ [startOutboundCall] No DID assigned and no TWILIO_FROM_NUMBER env var`);
+        return res.status(400).json({
+          error: "No phone number (DID) assigned to this agent and no system TWILIO_FROM_NUMBER configured."
+        });
+      }
+
+      console.warn(`⚠️  [startOutboundCall] Using fallback TWILIO_FROM_NUMBER for Twilio provider`);
+      // Note: fromPhone remains null, will use fallback in initiateCall() below
     }
 
     // Validate PUBLIC_BASE_URL
@@ -71,22 +98,31 @@ export const startOutboundCall = async (req, res) => {
     });
 
     // Instantiate the correct provider
+    console.log(`📱 [startOutboundCall] Creating provider instance via ProviderFactory...`);
     let provider;
     try {
       provider = ProviderFactory.createProvider(voipProvider);
+      console.log(`✅ [startOutboundCall] Provider instance created successfully`);
     } catch (err) {
-      console.error(`❌ Failed to create provider: ${err.message}`);
+      console.error(`❌ [startOutboundCall] Provider creation failed: ${err.message}`);
       call.status = "FAILED";
       await call.save();
-      return res.status(500).json({ error: `Provider error: ${err.message}` });
+      return res.status(500).json({
+        error: `VOIP Provider Error: ${err.message}. Please check your VOIP credentials in Settings > VOIP Integration.`
+      });
     }
 
     // Initiate call via provider abstraction
-    console.log(`📞 Starting outbound call via ${voipProvider.provider}: to=${normalizedPhone}, from=${fromPhone || 'system'}`);
+    const effectiveFromPhone = fromPhone || process.env.TWILIO_FROM_NUMBER;
+    console.log(`\n📞 [startOutboundCall] INITIATING CALL`);
+    console.log(`   ├─ Provider: ${voipProvider.provider}`);
+    console.log(`   ├─ From: ${effectiveFromPhone}`);
+    console.log(`   ├─ To: ${normalizedPhone}`);
+    console.log(`   └─ Calling provider.initiateCall()...\n`);
 
     const callResult = await provider.initiateCall({
       toPhone: normalizedPhone,
-      fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
+      fromPhone: effectiveFromPhone,
       webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
       statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
     });
@@ -97,12 +133,34 @@ export const startOutboundCall = async (req, res) => {
     call.voipProvider = callResult.provider;
     await call.save();
 
-    console.log(`✅ Call initiated: SID=${callResult.callSid}, Provider=${callResult.provider}`);
+    console.log(`\n✅ [startOutboundCall] CALL INITIATED SUCCESSFULLY`);
+    console.log(`   ├─ Call SID: ${callResult.callSid}`);
+    console.log(`   ├─ Provider: ${callResult.provider}`);
+    console.log(`   └─ Provider Call ID: ${callResult.providerCallId}\n`);
+
     res.json(call);
   } catch (err) {
-    console.error("❌ Outbound call error:", err.message);
-    console.error("Full error:", err);
-    res.status(500).json({ error: err.message || "Outbound call failed" });
+    console.error("\n❌ [startOutboundCall] CALL EXECUTION FAILED");
+    console.error(`   ├─ Error: ${err.message}`);
+    console.error(`   ├─ Provider: ${voipProvider.provider}`);
+    console.error(`   └─ Full error:`, err.stack);
+
+    // Update call record with failure status
+    try {
+      const failedCall = await Call.findById(call._id);
+      if (failedCall) {
+        failedCall.status = "FAILED";
+        await failedCall.save();
+      }
+    } catch (saveErr) {
+      console.error("Failed to update call status:", saveErr.message);
+    }
+
+    res.status(500).json({
+      error: err.message || "Outbound call failed",
+      provider: voipProvider.provider,
+      hint: "Check Cloud Run logs for detailed error information"
+    });
   }
 };
 
