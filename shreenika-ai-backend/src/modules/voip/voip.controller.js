@@ -173,40 +173,80 @@ export const addVoipProvider = async (req, res) => {
       }
     }
 
-    // Deactivate existing providers
-    await VoipProvider.updateMany(
-      { userId: req.user._id },
-      { isActive: false }
-    );
-
-    // Create new provider
-    const newProvider = await VoipProvider.create({
+    // Check if provider already exists (for reconnect scenario)
+    const existingProvider = await VoipProvider.findOne({
       userId: req.user._id,
-      provider,
-      credentials: {
-        // Twilio
-        accountSid: accountSid || null,
-        authToken: authToken || null,
-        // Generic providers
-        apiKey: apiKey || null,
-        secretKey: secretKey || null,
-        endpointUrl: endpointUrl || null,
-        httpMethod: httpMethod || null,
-        headers: headers || null,
-        region: region || null,
-        // SansPBX specific
-        tokenEndpoint: tokenEndpoint || null,
-        dialEndpoint: dialEndpoint || null,
-        accessToken: accessToken || null,
-        accessKey: accessKey || null,
-        appId: appId || null,
-        username: username || null,
-        password: password || null,
-      },
-      isVerified,
-      isActive: true,
-      lastSyncedAt: new Date(),
+      provider: provider,
+      isActive: true
     });
+
+    let newProvider;
+
+    if (existingProvider) {
+      // UPDATE existing provider instead of creating new one
+      console.log(`♻️  Updating existing ${provider} provider`);
+      existingProvider.credentials = {
+        // Twilio
+        accountSid: accountSid || existingProvider.credentials.accountSid,
+        authToken: authToken || existingProvider.credentials.authToken,
+        // Generic providers
+        apiKey: apiKey || existingProvider.credentials.apiKey,
+        secretKey: secretKey || existingProvider.credentials.secretKey,
+        endpointUrl: endpointUrl || existingProvider.credentials.endpointUrl,
+        httpMethod: httpMethod || existingProvider.credentials.httpMethod,
+        headers: headers || existingProvider.credentials.headers,
+        region: region || existingProvider.credentials.region,
+        // SansPBX specific
+        tokenEndpoint: tokenEndpoint || existingProvider.credentials.tokenEndpoint,
+        dialEndpoint: dialEndpoint || existingProvider.credentials.dialEndpoint,
+        accessToken: accessToken || existingProvider.credentials.accessToken,
+        accessKey: accessKey || existingProvider.credentials.accessKey,
+        appId: appId || existingProvider.credentials.appId,
+        username: username || existingProvider.credentials.username,
+        password: password || existingProvider.credentials.password,
+      };
+      existingProvider.isVerified = isVerified;
+      existingProvider.lastSyncedAt = new Date();
+      newProvider = await existingProvider.save();
+      console.log(`✅ ${provider} provider updated`);
+    } else {
+      // CREATE new provider
+      console.log(`✨ Creating new ${provider} provider`);
+
+      // Deactivate OTHER providers (not this one)
+      await VoipProvider.updateMany(
+        { userId: req.user._id, provider: { $ne: provider } },
+        { isActive: false }
+      );
+
+      newProvider = await VoipProvider.create({
+        userId: req.user._id,
+        provider,
+        credentials: {
+          // Twilio
+          accountSid: accountSid || null,
+          authToken: authToken || null,
+          // Generic providers
+          apiKey: apiKey || null,
+          secretKey: secretKey || null,
+          endpointUrl: endpointUrl || null,
+          httpMethod: httpMethod || null,
+          headers: headers || null,
+          region: region || null,
+          // SansPBX specific
+          tokenEndpoint: tokenEndpoint || null,
+          dialEndpoint: dialEndpoint || null,
+          accessToken: accessToken || null,
+          accessKey: accessKey || null,
+          appId: appId || null,
+          username: username || null,
+          password: password || null,
+        },
+        isVerified,
+        isActive: true,
+        lastSyncedAt: new Date(),
+      });
+    }
 
     // If Twilio, immediately fetch and import numbers
     if (provider === "Twilio" && accountSid && authToken) {

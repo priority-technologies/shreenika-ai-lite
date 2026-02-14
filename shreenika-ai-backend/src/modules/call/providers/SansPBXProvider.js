@@ -69,11 +69,23 @@ export class SansPBXProvider extends BaseProvider {
       // Step 2: Make the call
       const fetch = (await import('node-fetch')).default;
 
-      // Normalize phone numbers - remove all non-numeric characters
-      const normalizedTo = toPhone.replace(/[\D]/g, '');
-      const normalizedFrom = fromPhone.replace(/[\D]/g, '');
+      // Normalize phone numbers
+      // SansPBX expects numbers in format: 911234567890 (country code + 10 digits)
+      let normalizedTo = toPhone.replace(/[\D]/g, '');
+      let normalizedFrom = fromPhone.replace(/[\D]/g, '');
 
-      console.log(`📞 SansPBX: Dialing ${normalizedTo} from ${normalizedFrom}`);
+      // Add country code if missing (for 10-digit Indian numbers)
+      if (normalizedTo.length === 10) {
+        normalizedTo = '91' + normalizedTo;
+      }
+      if (normalizedFrom.length === 10) {
+        normalizedFrom = '91' + normalizedFrom;
+      }
+
+      console.log(`📞 SansPBX: Initiating call`);
+      console.log(`   Input - To: ${toPhone}, From: ${fromPhone}`);
+      console.log(`   Normalized - To: ${normalizedTo}, From: ${normalizedFrom}`);
+      console.log(`   Payload - call_to: ${normalizedTo}, caller_id: ${normalizedFrom}`);
 
       const payload = {
         appid: this.credentials.appId || 6,
