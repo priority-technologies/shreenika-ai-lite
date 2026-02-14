@@ -62,7 +62,8 @@ export const addVoipProvider = async (req, res) => {
       appId,
       username,
       password,
-      did
+      did,
+      agentId  // CRITICAL: Receive agentId from frontend to auto-assign DID
     } = req.body;
 
     if (!provider) {
@@ -212,7 +213,7 @@ export const addVoipProvider = async (req, res) => {
       try {
         const twilioClient = new Twilio(accountSid, authToken);
         const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
-        for (const number of numbers) {
+        for (let idx = 0; const number of numbers) {
           await VoipNumber.findOneAndUpdate(
             {
               userId: req.user._id,
@@ -237,9 +238,15 @@ export const addVoipProvider = async (req, res) => {
                 capabilities: number.capabilities,
                 addressRequirements: number.addressRequirements,
               },
+              // CRITICAL: Auto-assign first number to the selected agent
+              assignedAgentId: idx === 0 && agentId ? agentId : null,
             },
             { upsert: true, new: true }
           );
+          if (idx === 0 && agentId) {
+            console.log(`✅ Auto-assigned first number ${number.phoneNumber} to agent ${agentId}`);
+          }
+          idx++;
         }
         console.log(`✅ Imported ${numbers.length} numbers from Twilio`);
       } catch (importError) {
@@ -249,8 +256,8 @@ export const addVoipProvider = async (req, res) => {
 
     // If SansPBX, import DIDs
     if (provider === "SansPBX" && isVerified && didList.length > 0) {
-      for (const d of didList) {
-        await VoipNumber.findOneAndUpdate(
+      for (let idx = 0; const d of didList) {
+        const voipNumber = await VoipNumber.findOneAndUpdate(
           {
             userId: req.user._id,
             phoneNumber: d.number || d.did || d,
@@ -266,16 +273,22 @@ export const addVoipProvider = async (req, res) => {
             status: "active",
             source: "imported",
             providerData: d,
+            // CRITICAL: Auto-assign first DID to the selected agent
+            assignedAgentId: idx === 0 && agentId ? agentId : null,
           },
           { upsert: true, new: true }
         );
+        if (idx === 0 && agentId) {
+          console.log(`✅ Auto-assigned first DID ${voipNumber.phoneNumber} to agent ${agentId}`);
+        }
+        idx++;
       }
       console.log(`✅ Imported ${didList.length} DIDs from SansPBX provider`);
     }
 
     // If Other, import DIDs
     if (provider === "Other" && isVerified && didList.length > 0) {
-      for (const did of didList) {
+      for (let idx = 0; const did of didList) {
         await VoipNumber.findOneAndUpdate(
           {
             userId: req.user._id,
@@ -292,9 +305,15 @@ export const addVoipProvider = async (req, res) => {
             status: "active",
             source: "imported",
             providerData: did,
+            // CRITICAL: Auto-assign first DID to the selected agent
+            assignedAgentId: idx === 0 && agentId ? agentId : null,
           },
           { upsert: true, new: true }
         );
+        if (idx === 0 && agentId) {
+          console.log(`✅ Auto-assigned first DID ${did.number || did.did || did} to agent ${agentId}`);
+        }
+        idx++;
       }
       console.log(`✅ Imported ${didList.length} DIDs from Other provider`);
     }
