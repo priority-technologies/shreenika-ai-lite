@@ -10,6 +10,7 @@ import {
   getAvailableNumbers,
   purchaseNumber,
   setupVoipForRegistration,
+  deleteVoipNumber,
 } from "./voip.controller.js";
 import { requireAuth } from "../auth/auth.middleware.js";
 
@@ -31,6 +32,7 @@ router.post("/numbers/sync", syncVoipNumbers);
 router.post("/numbers/assign", assignNumberToAgent);
 router.post("/numbers/unassign", unassignNumber);
 router.post("/numbers/release", releaseNumber);
+router.delete("/numbers/:numberId", deleteVoipNumber);
 
 // Number purchasing
 router.get("/numbers/available", getAvailableNumbers);

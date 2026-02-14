@@ -831,6 +831,60 @@ export const setupVoipForRegistration = async (req, res) => {
 };
 
 /**
+ * Delete VOIP number
+ */
+export const deleteVoipNumber = async (req, res) => {
+  try {
+    const { numberId } = req.params;
+
+    if (!numberId) {
+      return res.status(400).json({ error: "Number ID is required" });
+    }
+
+    // Find and verify number belongs to user
+    const number = await VoipNumber.findOne({
+      _id: numberId,
+      userId: req.user._id,
+    });
+
+    if (!number) {
+      return res.status(404).json({ error: "Phone number not found" });
+    }
+
+    const providerId = number.providerId;
+    const phoneNumber = number.phoneNumber;
+
+    // Delete the number
+    await VoipNumber.deleteOne({ _id: numberId });
+
+    // Check if provider has any remaining active numbers
+    const remainingNumbers = await VoipNumber.countDocuments({
+      providerId: providerId,
+      status: "active",
+    });
+
+    // If no active numbers remain, deactivate the provider
+    if (remainingNumbers === 0) {
+      await VoipProvider.updateOne(
+        { _id: providerId },
+        { isActive: false }
+      );
+      console.log(`✅ Deactivated provider ${providerId} (no active numbers remaining)`);
+    }
+
+    res.json({
+      success: true,
+      message: `VOIP number ${phoneNumber} deleted successfully`,
+      providerId,
+      remainingNumbers,
+    });
+  } catch (error) {
+    console.error("Delete VOIP number error:", error);
+    res.status(500).json({ error: "Failed to delete VOIP number" });
+  }
+};
+
+/**
  * Purchase phone number (Twilio)
  */
 export const purchaseNumber = async (req, res) => {
