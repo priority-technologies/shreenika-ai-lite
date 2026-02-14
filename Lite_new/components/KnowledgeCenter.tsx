@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { AgentConfig, KnowledgeDocument } from '../types';
 import { FileText, Plus, Search, Trash2, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import AssignAgentModal from '../components/AssignAgentModal';
-import { getAgents, getBillingStatus } from '../services/api';
+import { getAgents, getBillingStatus, uploadKnowledgeFile, deleteKnowledgeDoc } from '../services/api';
 
 type PlanType = 'Starter' | 'Pro' | 'Enterprise';
 
@@ -16,7 +16,8 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [pendingDoc, setPendingDoc] = useState<any>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [allAgents, setAllAgents] = useState<AgentConfig[]>([agent]);
 
@@ -38,7 +39,6 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
         setMaxDocs(subscription.docLimit ?? 0);
       } catch (err) {
         console.error('Failed to fetch billing status:', err);
-        // Default to Starter on error
         setCurrentPlan('Starter');
         setKnowledgeEnabled(false);
         setMaxDocs(0);
@@ -64,7 +64,7 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
     fetchAllAgents();
   }, []);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!knowledgeEnabled) {
       alert('Please upgrade your plan to use Knowledge Base.');
       return;
@@ -74,34 +74,68 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
       return;
     }
     if (e.target.files && e.target.files[0]) {
-      setUploading(true);
       const file = e.target.files[0];
+      setPendingFile(file);
+      setIsAssignModalOpen(true);
+    }
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
-      // Simulate network upload (backend upload endpoint not yet implemented)
-      setTimeout(() => {
-        const newDoc: KnowledgeDocument = {
-          id: Math.random().toString(36).substr(2, 9),
-          name: file.name,
-          size: (file.size / 1024).toFixed(1) + ' KB',
-          type: file.type || 'application/pdf',
-          status: 'synced',
-          uploadedAt: new Date().toISOString(),
-          assignedAgentIds: [],
-          uploadedFrom: 'global',
-        };
+  const handleUploadToAgent = async (agentIds: string[]) => {
+    if (!pendingFile) return;
 
-        setPendingDoc(newDoc);
-        setIsAssignModalOpen(true);
-        setUploading(false);
-      }, 1500);
+    setIsAssignModalOpen(false);
+    setUploading(true);
+    setUploadError('');
+
+    try {
+      // Upload to each selected agent
+      for (const targetAgentId of agentIds) {
+        const result = await uploadKnowledgeFile(pendingFile, targetAgentId, pendingFile.name);
+
+        // If this is the currently selected agent, add to local state
+        if (targetAgentId === agent.id) {
+          const newDoc: KnowledgeDocument = {
+            id: result.id || result._id,
+            name: result.title || pendingFile.name,
+            size: `${(pendingFile.size / 1024).toFixed(1)} KB`,
+            type: pendingFile.type || 'application/pdf',
+            status: 'synced',
+            uploadedAt: result.createdAt || new Date().toISOString(),
+            assignedAgentIds: agentIds,
+            uploadedFrom: 'global',
+          };
+
+          setAgent({
+            ...agent,
+            knowledgeBase: [...(agent.knowledgeBase || []), newDoc],
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('Upload failed:', err);
+      setUploadError(err.message || 'Failed to upload document. Please try again.');
+      setTimeout(() => setUploadError(''), 5000);
+    } finally {
+      setUploading(false);
+      setPendingFile(null);
     }
   };
 
-  const handleDelete = (id: string) => {
-    setAgent({
-      ...agent,
-      knowledgeBase: agent.knowledgeBase.filter(doc => doc.id !== id)
-    });
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+
+    try {
+      await deleteKnowledgeDoc(id);
+      setAgent({
+        ...agent,
+        knowledgeBase: agent.knowledgeBase.filter(doc => doc.id !== id)
+      });
+    } catch (err: any) {
+      console.error('Delete failed:', err);
+      alert('Failed to delete document: ' + (err.message || 'Unknown error'));
+    }
   };
 
   const filteredDocs = (agent.knowledgeBase || []).filter(doc =>
@@ -129,7 +163,7 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Knowledge Center</h1>
-          <p className="text-slate-500">Manage documents and resources for your AI agent.</p>
+          <p className="text-slate-500">Upload documents to train your AI agent with domain knowledge.</p>
         </div>
 
         {(agent.knowledgeBase?.length > 0) && knowledgeEnabled && (
@@ -138,7 +172,8 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
               type="file"
               ref={fileInputRef}
               className="hidden"
-              onChange={handleFileUpload}
+              accept=".pdf,.txt,.csv,.md,.png,.jpg,.jpeg,.webp"
+              onChange={handleFileSelect}
             />
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -146,11 +181,27 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
               className="flex items-center space-x-2 bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 rounded-lg transition-colors font-medium shadow-sm"
             >
               {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              <span>Add Document</span>
+              <span>{uploading ? 'Uploading...' : 'Add Document'}</span>
             </button>
           </div>
         )}
       </div>
+
+      {/* Upload error */}
+      {uploadError && (
+        <div className="p-4 rounded-lg bg-red-50 text-red-700 border border-red-200 flex items-center">
+          <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+          {uploadError}
+        </div>
+      )}
+
+      {/* Uploading indicator */}
+      {uploading && (
+        <div className="p-4 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 flex items-center">
+          <Loader2 className="w-5 h-5 mr-2 animate-spin flex-shrink-0" />
+          Processing document... Extracting text and training agent.
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-h-[400px]">
         {(!agent.knowledgeBase || agent.knowledgeBase.length === 0) ? (
@@ -165,13 +216,15 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
                </svg>
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Your Knowledge Center is Empty</h3>
-            <p className="text-slate-500 max-w-sm mb-8">Get started by adding your first infobase document.</p>
+            <p className="text-slate-500 max-w-sm mb-2">Upload PDFs, text files, or images to train your AI agent.</p>
+            <p className="text-xs text-slate-400 max-w-sm mb-8">Supported: PDF, TXT, CSV, MD, PNG, JPG, WEBP</p>
 
             <input
               type="file"
               ref={fileInputRef}
               className="hidden"
-              onChange={handleFileUpload}
+              accept=".pdf,.txt,.csv,.md,.png,.jpg,.jpeg,.webp"
+              onChange={handleFileSelect}
             />
             <button
               onClick={() => {
@@ -278,22 +331,9 @@ const KnowledgeCenter: React.FC<KnowledgeCenterProps> = ({ agent, setAgent }) =>
         agents={allAgents}
         onClose={() => {
           setIsAssignModalOpen(false);
-          setPendingDoc(null);
+          setPendingFile(null);
         }}
-        onConfirm={(agentIds) => {
-          const finalDoc = {
-            ...pendingDoc,
-            assignedAgentIds: agentIds,
-          };
-
-          setAgent({
-            ...agent,
-            knowledgeBase: [...(agent.knowledgeBase || []), finalDoc],
-          });
-
-          setPendingDoc(null);
-          setIsAssignModalOpen(false);
-        }}
+        onConfirm={handleUploadToAgent}
       />
 
       {/* ===== Upgrade Modal ===== */}

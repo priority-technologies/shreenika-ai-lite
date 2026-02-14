@@ -15,6 +15,7 @@
 import { EventEmitter } from 'events';
 import Agent from '../agent/agent.model.js';
 import Call from './call.model.js';
+import Knowledge from '../knowledge/knowledge.model.js';
 import { createGeminiLiveSession } from '../../config/google.live.client.js';
 import { io } from '../../server.js';
 
@@ -66,8 +67,20 @@ export class VoiceService extends EventEmitter {
 
       console.log(`📋 Agent loaded: ${this.agent.name}`);
 
-      // Create Gemini Live session
-      this.geminiSession = createGeminiLiveSession(this.agent);
+      // Fetch knowledge documents from DB for this agent
+      let knowledgeDocs = [];
+      try {
+        knowledgeDocs = await Knowledge.find({ agentId: this.agentId })
+          .select('title rawText sourceType');
+        if (knowledgeDocs.length > 0) {
+          console.log(`📚 Knowledge loaded: ${knowledgeDocs.length} documents, ${knowledgeDocs.reduce((s, d) => s + (d.rawText?.length || 0), 0)} chars total`);
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to load knowledge docs:', err.message);
+      }
+
+      // Create Gemini Live session with knowledge
+      this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs);
 
       // Set up Gemini event handlers
       this._setupGeminiHandlers();

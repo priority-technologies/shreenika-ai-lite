@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { AgentConfig, Subscription } from '../types';
 import { improveAgentPrompt } from '../services/geminiService';
 import { LANGUAGE_OPTIONS, NOISE_OPTIONS, CHARACTERISTIC_OPTIONS } from '../constants';
-import { getAgents, getAgentById, createAgent, updateAgent, deleteAgent, getBillingStatus, getVoices } from '../services/api';
+import { getAgents, getAgentById, createAgent, updateAgent, deleteAgent, getBillingStatus, getVoices, uploadKnowledgeFile, deleteKnowledgeDoc } from '../services/api';
 import {
   Save,
   Upload,
@@ -369,39 +369,63 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [fileUploading, setFileUploading] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!planRules.allowKnowledge) {
       setIsBuyModalOpen(true);
       return;
-      }
+    }
 
-      if ((localAgent.knowledgeBase?.length || 0) >= planRules.maxDocsPerAgent) {
-        setIsBuyModalOpen(true);
-        return;
-      }
+    if ((localAgent.knowledgeBase?.length || 0) >= planRules.maxDocsPerAgent) {
+      setIsBuyModalOpen(true);
+      return;
+    }
 
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const newFile = {
-        name: file.name,
-        size: (file.size / 1024).toFixed(1) + ' KB',
-        type: file.type || 'unknown',
-        id: Math.random().toString(),
-        status: 'synced' as const,
-        uploadedAt: new Date().toISOString(),
-        // ===== NEW =====
-        assignedAgentIds: [localAgent.id!],
-        uploadedFrom: 'agent' as const,
-      };
-      const currentFiles = localAgent.knowledgeBase || [];
-      handleChange('knowledgeBase', [...currentFiles, newFile]);
+      setFileUploading(true);
+
+      try {
+        const result = await uploadKnowledgeFile(file, localAgent.id, file.name);
+
+        const newFile = {
+          name: result.title || file.name,
+          size: (file.size / 1024).toFixed(1) + ' KB',
+          type: file.type || 'unknown',
+          id: result.id || result._id,
+          status: 'synced' as const,
+          uploadedAt: result.createdAt || new Date().toISOString(),
+          assignedAgentIds: [localAgent.id!],
+          uploadedFrom: 'agent' as const,
+        };
+        const currentFiles = localAgent.knowledgeBase || [];
+        handleChange('knowledgeBase', [...currentFiles, newFile]);
+      } catch (err: any) {
+        console.error('File upload failed:', err);
+        alert('Failed to upload document: ' + (err.message || 'Unknown error'));
+      } finally {
+        setFileUploading(false);
+      }
     }
   };
 
-  const removeFile = (index: number) => {
-     const currentFiles = [...(localAgent.knowledgeBase || [])];
-     currentFiles.splice(index, 1);
-     handleChange('knowledgeBase', currentFiles);
+  const removeFile = async (index: number) => {
+    const currentFiles = [...(localAgent.knowledgeBase || [])];
+    const docToRemove = currentFiles[index];
+
+    try {
+      if (docToRemove?.id) {
+        await deleteKnowledgeDoc(docToRemove.id);
+      }
+      currentFiles.splice(index, 1);
+      handleChange('knowledgeBase', currentFiles);
+    } catch (err: any) {
+      console.error('Delete failed:', err);
+      // Still remove from local state even if backend fails
+      currentFiles.splice(index, 1);
+      handleChange('knowledgeBase', currentFiles);
+    }
   };
 
   return (
@@ -946,7 +970,7 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                               className="hidden" 
                               onChange={handleFileUpload}
                             />
-                            <button 
+                            <button
                                onClick={() =>{
                                 if (!planRules.allowKnowledge) {
                                   setIsBuyModalOpen(true);
@@ -954,10 +978,11 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                                   fileInputRef.current?.click();
                                 }
                               }}
-                               className="w-full border-2 border-dashed border-slate-300 rounded-lg py-4 px-3 text-sm text-center text-slate-600 bg-slate-50 hover:bg-slate-100 hover:border-slate-400 transition-all flex flex-col items-center justify-center space-y-2"
+                               disabled={fileUploading}
+                               className="w-full border-2 border-dashed border-slate-300 rounded-lg py-4 px-3 text-sm text-center text-slate-600 bg-slate-50 hover:bg-slate-100 hover:border-slate-400 transition-all flex flex-col items-center justify-center space-y-2 disabled:opacity-50"
                             >
-                               <Upload className="w-5 h-5 text-slate-400" />
-                               <span>Upload Document</span>
+                               {fileUploading ? <Loader2 className="w-5 h-5 text-blue-500 animate-spin" /> : <Upload className="w-5 h-5 text-slate-400" />}
+                               <span>{fileUploading ? 'Processing...' : 'Upload Document'}</span>
                             </button>
                          </div>
 

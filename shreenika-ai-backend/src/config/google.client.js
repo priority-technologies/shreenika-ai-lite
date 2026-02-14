@@ -10,7 +10,7 @@ export const getGeminiClient = () => {
   const genAI = new GoogleGenerativeAI(GOOGLE_API_KEY);
 
   return {
-    llm: genAI.getGenerativeModel({ model: "gemini-1.5-pro" }),
+    llm: genAI.getGenerativeModel({ model: "gemini-2.5-flash" }),
     embedding: genAI.getGenerativeModel({ model: "text-embedding-004" })
   };
 };

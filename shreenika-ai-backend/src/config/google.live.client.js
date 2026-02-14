@@ -50,9 +50,10 @@ export const mapAgentVoiceToGemini = (agentVoiceId) => {
 /**
  * Build system instruction from agent configuration
  * @param {Object} agent - Agent document from MongoDB
+ * @param {Array} knowledgeDocs - Knowledge documents fetched from DB (optional)
  * @returns {string} - System instruction for Gemini
  */
-export const buildSystemInstruction = (agent) => {
+export const buildSystemInstruction = (agent, knowledgeDocs = []) => {
   const parts = [];
 
   // Agent identity
@@ -78,14 +79,59 @@ export const buildSystemInstruction = (agent) => {
     parts.push(agent.prompt);
   }
 
-  // Knowledge base context
-  if (agent.knowledgeBase && agent.knowledgeBase.length > 0) {
-    parts.push('\nYou have access to the following knowledge:');
-    agent.knowledgeBase.forEach((item, index) => {
-      if (item.content) {
-        parts.push(`[Document ${index + 1}]: ${item.content.substring(0, 1000)}...`);
+  // ===== KNOWLEDGE BASE INJECTION =====
+  // Priority 1: Knowledge documents fetched from DB (full text)
+  // Priority 2: Embedded content in agent.knowledgeBase array
+  const docsToInject = [];
+
+  // From DB-fetched knowledge documents
+  if (knowledgeDocs && knowledgeDocs.length > 0) {
+    knowledgeDocs.forEach(doc => {
+      if (doc.rawText || doc.content) {
+        docsToInject.push({
+          title: doc.title || 'Untitled',
+          content: doc.rawText || doc.content
+        });
       }
     });
+  }
+
+  // Fallback: from embedded knowledgeBase array on agent
+  if (docsToInject.length === 0 && agent.knowledgeBase && agent.knowledgeBase.length > 0) {
+    agent.knowledgeBase.forEach(item => {
+      if (item.content) {
+        docsToInject.push({
+          title: item.name || 'Untitled',
+          content: item.content
+        });
+      }
+    });
+  }
+
+  // Inject knowledge into system prompt
+  if (docsToInject.length > 0) {
+    parts.push('\n===== TRAINING KNOWLEDGE BASE =====');
+    parts.push('You have been trained on the following documents. Use this knowledge to make informed decisions during the conversation.');
+    parts.push('Study, learn, and apply the content from these documents when answering questions, making recommendations, or handling objections.');
+    parts.push('Use the logic, data, pricing, features, and strategies described in these documents as your core decision-making framework.\n');
+
+    let totalChars = 0;
+    const maxTotalChars = 30000; // Gemini context limit safety
+
+    docsToInject.forEach((doc, index) => {
+      const remaining = maxTotalChars - totalChars;
+      if (remaining <= 0) return;
+
+      const content = doc.content.substring(0, Math.min(remaining, 10000));
+      parts.push(`[Document ${index + 1}: ${doc.title}]`);
+      parts.push(content);
+      parts.push('');
+      totalChars += content.length;
+    });
+
+    parts.push('===== END KNOWLEDGE BASE =====\n');
+    parts.push('IMPORTANT: Use the above knowledge to support your conversations. Reference specific data, features, or pricing from the documents when relevant.');
+    parts.push('If a question falls outside the knowledge base, acknowledge that honestly and offer to help with what you do know.\n');
   }
 
   // Call handling instructions
@@ -112,7 +158,7 @@ export class GeminiLiveSession extends EventEmitter {
     super();
 
     this.apiKey = apiKey;
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-live';
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-preview-native-audio-dialog';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
 
@@ -349,17 +395,20 @@ export class GeminiLiveSession extends EventEmitter {
 /**
  * Create a Gemini Live session with agent configuration
  * @param {Object} agent - Agent document from MongoDB
+ * @param {Array} knowledgeDocs - Knowledge documents from DB (optional)
  * @returns {GeminiLiveSession} - Configured session
  */
-export const createGeminiLiveSession = (agent) => {
+export const createGeminiLiveSession = (agent, knowledgeDocs = []) => {
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
     throw new Error('GOOGLE_API_KEY is not configured');
   }
 
-  const systemInstruction = buildSystemInstruction(agent);
+  const systemInstruction = buildSystemInstruction(agent, knowledgeDocs);
   const voice = mapAgentVoiceToGemini(agent.voiceId);
+
+  console.log(`📋 System instruction built: ${systemInstruction.length} chars, ${knowledgeDocs.length} knowledge docs injected`);
 
   return new GeminiLiveSession(apiKey, {
     systemInstruction,

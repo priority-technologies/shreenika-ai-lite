@@ -98,6 +98,29 @@ export const getAgentById = (id: string) =>
   apiFetch(`/api/agents/${id}`, undefined, "core");
 
 // ==============================
+// KNOWLEDGE BASE APIs (CORE)
+// ==============================
+export const uploadKnowledgeFile = (file: File, agentId?: string, title?: string) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (agentId) formData.append("agentId", agentId);
+  if (title) formData.append("title", title);
+
+  return apiFetch("/knowledge/upload", {
+    method: "POST",
+    body: formData,
+  }, "core");
+};
+
+export const listKnowledgeDocs = (agentId?: string) => {
+  const query = agentId ? `?agentId=${agentId}` : "";
+  return apiFetch(`/knowledge${query}`, undefined, "core");
+};
+
+export const deleteKnowledgeDoc = (id: string) =>
+  apiFetch(`/knowledge/${id}`, { method: "DELETE" }, "core");
+
+// ==============================
 // CONTACTS APIs (CORE)
 // ==============================
 export const getContacts = () =>
