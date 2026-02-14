@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Phone, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, X } from 'lucide-react';
+import { Phone, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, X, Eye, EyeOff } from 'lucide-react';
 import { getAgents, addVoipProvider, getVoipProvider } from '../services/api';
 
 interface Agent {
@@ -44,6 +44,10 @@ const VoipIntegrationSettings: React.FC = () => {
 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  // Password visibility toggles
+  const [showAccessToken, setShowAccessToken] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Fetch initial data
   useEffect(() => {
@@ -360,14 +364,23 @@ const VoipIntegrationSettings: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Access Token (Accesstoken) <span className="text-red-600">*</span>
                     </label>
-                    <input
-                      type="password"
-                      name="accessToken"
-                      placeholder="e.g., 47214c8560cf8bf5c06f5c00044ce0f6"
-                      value={formData.accessToken}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showAccessToken ? "text" : "password"}
+                        name="accessToken"
+                        placeholder="Static token from your VOIP provider"
+                        value={formData.accessToken}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAccessToken(!showAccessToken)}
+                        className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
+                      >
+                        {showAccessToken ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">Static token for authentication (from provider)</p>
                   </div>
 
@@ -378,7 +391,7 @@ const VoipIntegrationSettings: React.FC = () => {
                     <input
                       type="text"
                       name="accessKey"
-                      placeholder="e.g., darpann"
+                      placeholder="e.g., Priority Technologies Inc."
                       value={formData.accessKey}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
@@ -422,7 +435,7 @@ const VoipIntegrationSettings: React.FC = () => {
                     <input
                       type="text"
                       name="username"
-                      placeholder="e.g., darpanninvestments"
+                      placeholder="e.g., your-username"
                       value={formData.username}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
@@ -434,14 +447,23 @@ const VoipIntegrationSettings: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Password <span className="text-red-600">*</span>
                     </label>
-                    <input
-                      type="password"
-                      name="password"
-                      placeholder="••••••••••"
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                    />
+                    <div className="relative">
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        name="password"
+                        placeholder="••••••••••"
+                        value={formData.password}
+                        onChange={handleInputChange}
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                    </div>
                     <p className="text-xs text-gray-500 mt-1">For Basic Auth (from provider)</p>
                   </div>
 
