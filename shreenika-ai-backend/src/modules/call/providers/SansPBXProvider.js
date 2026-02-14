@@ -102,17 +102,26 @@ export class SansPBXProvider extends BaseProvider {
 
       const data = await response.json();
 
-      if (data.status !== 'success') {
+      console.log(`📥 SansPBX: Dial response:`, JSON.stringify(data, null, 2));
+
+      // Check for success indicators in response
+      // SansPBX may return different status values
+      if (data.status && data.status !== 'success') {
         throw new Error(`API returned status: ${data.status}`);
+      }
+
+      // If we have a call_id, the call was initiated
+      if (!data.call_id && !data.id && !data.Callid) {
+        throw new Error(`No call ID in response: ${JSON.stringify(data)}`);
       }
 
       console.log(`✅ SansPBX: Call initiated successfully`);
 
       return {
-        callSid: data.call_id || data.id || `sanspbx_${Date.now()}`,
+        callSid: data.call_id || data.id || data.Callid || `sanspbx_${Date.now()}`,
         status: 'initiated',
         provider: 'SansPBX',
-        providerCallId: data.call_id || data.id
+        providerCallId: data.call_id || data.id || data.Callid
       };
     } catch (error) {
       console.error(`❌ SansPBX: Call initiation failed: ${error.message}`);

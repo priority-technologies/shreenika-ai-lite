@@ -344,17 +344,26 @@ export const getVoipNumbers = async (req, res) => {
       status: "active",
     })
       .populate("assignedAgentId", "name title")
+      .populate("providerId", "provider isActive")
       .sort({ createdAt: -1 });
 
     const formattedNumbers = numbers.map((num) => ({
+      _id: num._id,
       id: num._id,
+      phoneNumber: num.phoneNumber,
       number: num.phoneNumber,
       friendlyName: num.friendlyName,
       region: num.region,
       country: num.country,
       capabilities: num.capabilities,
+      voipProvider: num.providerId ? {
+        _id: num.providerId._id,
+        provider: num.providerId.provider,
+        isActive: num.providerId.isActive,
+      } : null,
       assignedAgent: num.assignedAgentId
         ? {
+            _id: num.assignedAgentId._id,
             id: num.assignedAgentId._id,
             name: num.assignedAgentId.name,
           }
