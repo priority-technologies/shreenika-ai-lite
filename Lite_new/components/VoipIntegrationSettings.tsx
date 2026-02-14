@@ -358,30 +358,32 @@ const VoipIntegrationSettings: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      API Key / Access Token <span className="text-red-600">*</span>
+                      Access Token (Accesstoken) <span className="text-red-600">*</span>
                     </label>
                     <input
-                      type="text"
+                      type="password"
                       name="accessToken"
-                      placeholder="Enter API key"
+                      placeholder="e.g., 47214c8560cf8bf5c06f5c00044ce0f6"
                       value={formData.accessToken}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Static token for authentication (from provider)</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Secret Key / Access Key <span className="text-red-600">*</span>
+                      Access Key <span className="text-red-600">*</span>
                     </label>
                     <input
-                      type="password"
+                      type="text"
                       name="accessKey"
-                      placeholder="••••••••••"
+                      placeholder="e.g., darpann"
                       value={formData.accessKey}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                     />
+                    <p className="text-xs text-gray-500 mt-1">Access key for API calls (from provider)</p>
                   </div>
 
                   <div>
@@ -415,21 +417,22 @@ const VoipIntegrationSettings: React.FC = () => {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Username (Optional)
+                      Username <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="text"
                       name="username"
-                      placeholder="Enter username"
+                      placeholder="e.g., darpanninvestments"
                       value={formData.username}
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                     />
+                    <p className="text-xs text-gray-500 mt-1">For Basic Auth (from provider)</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Password (Optional)
+                      Password <span className="text-red-600">*</span>
                     </label>
                     <input
                       type="password"
@@ -439,6 +442,7 @@ const VoipIntegrationSettings: React.FC = () => {
                       onChange={handleInputChange}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
                     />
+                    <p className="text-xs text-gray-500 mt-1">For Basic Auth (from provider)</p>
                   </div>
 
                   <details className="pt-4 border-t border-gray-300">
