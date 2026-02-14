@@ -1,5 +1,6 @@
 import { TwilioProvider } from './TwilioProvider.js';
 import { GenericProvider } from './GenericProvider.js';
+import { SansPBXProvider } from './SansPBXProvider.js';
 
 /**
  * Factory to instantiate correct provider based on VoipProvider config
@@ -20,6 +21,9 @@ export class ProviderFactory {
     switch (voipProvider.provider) {
       case 'Twilio':
         return new TwilioProvider(decryptedCreds, providerConfig);
+
+      case 'SansPBX':
+        return new SansPBXProvider(decryptedCreds, providerConfig);
 
       case 'Bland AI':
       case 'Vapi':

@@ -53,7 +53,16 @@ export const addVoipProvider = async (req, res) => {
       endpointUrl,
       httpMethod,
       headers,
-      region
+      region,
+      // SansPBX specific
+      tokenEndpoint,
+      dialEndpoint,
+      accessToken,
+      accessKey,
+      appId,
+      username,
+      password,
+      did
     } = req.body;
 
     if (!provider) {
@@ -78,9 +87,63 @@ export const addVoipProvider = async (req, res) => {
       }
     }
 
-    // Other provider validation
+    // SansPBX validation
     let didList = [];
     let isVerified = false;
+    if (provider === "SansPBX") {
+      if (!tokenEndpoint || !dialEndpoint || !accessToken || !accessKey || !username || !password || !appId) {
+        return res.status(400).json({ error: "Token endpoint, dial endpoint, access token, access key, username, password, and app ID are required for SansPBX" });
+      }
+      if (!did) {
+        return res.status(400).json({ error: "DID (phone number) is required for SansPBX" });
+      }
+
+      // Validate SansPBX credentials
+      try {
+        const fetch = (await import('node-fetch')).default;
+
+        // Create Basic auth header
+        const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+
+        console.log("🔐 SansPBX: Validating credentials...");
+
+        const response = await fetch(tokenEndpoint, {
+          method: 'POST',
+          headers: {
+            'Accesstoken': accessToken,
+            'Content-Type': 'application/json',
+            'Authorization': `Basic ${basicAuth}`
+          },
+          body: JSON.stringify({ access_key: accessKey })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Token generation failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.status !== 'success' || !data.Apitoken) {
+          throw new Error(`Invalid response: ${JSON.stringify(data)}`);
+        }
+
+        console.log("✅ SansPBX credentials validated successfully");
+        isVerified = true;
+
+        // Add the DID to the list
+        didList = [{
+          number: did,
+          friendlyName: `SansPBX DID ${did}`,
+          region: "India",
+          country: "IN",
+          capabilities: { voice: true }
+        }];
+      } catch (err) {
+        console.error("SansPBX validation failed:", err);
+        return res.status(400).json({ error: "Invalid SansPBX credentials or endpoint. " + err.message });
+      }
+    }
+
+    // Other provider validation
     if (provider === "Other") {
       if (!apiKey || !secretKey || !endpointUrl) {
         return res.status(400).json({ error: "API Key, Secret Key, and Endpoint URL are required for Other providers" });
@@ -120,14 +183,24 @@ export const addVoipProvider = async (req, res) => {
       userId: req.user._id,
       provider,
       credentials: {
+        // Twilio
         accountSid: accountSid || null,
         authToken: authToken || null,
+        // Generic providers
         apiKey: apiKey || null,
         secretKey: secretKey || null,
         endpointUrl: endpointUrl || null,
         httpMethod: httpMethod || null,
         headers: headers || null,
         region: region || null,
+        // SansPBX specific
+        tokenEndpoint: tokenEndpoint || null,
+        dialEndpoint: dialEndpoint || null,
+        accessToken: accessToken || null,
+        accessKey: accessKey || null,
+        appId: appId || null,
+        username: username || null,
+        password: password || null,
       },
       isVerified,
       isActive: true,
@@ -172,6 +245,32 @@ export const addVoipProvider = async (req, res) => {
       } catch (importError) {
         console.error("Failed to import Twilio numbers:", importError);
       }
+    }
+
+    // If SansPBX, import DIDs
+    if (provider === "SansPBX" && isVerified && didList.length > 0) {
+      for (const d of didList) {
+        await VoipNumber.findOneAndUpdate(
+          {
+            userId: req.user._id,
+            phoneNumber: d.number || d.did || d,
+          },
+          {
+            userId: req.user._id,
+            providerId: newProvider._id,
+            phoneNumber: d.number || d.did || d,
+            friendlyName: d.friendlyName || d.name || d.number || d,
+            region: d.region || "India",
+            country: d.country || "IN",
+            capabilities: d.capabilities || { voice: true },
+            status: "active",
+            source: "imported",
+            providerData: d,
+          },
+          { upsert: true, new: true }
+        );
+      }
+      console.log(`✅ Imported ${didList.length} DIDs from SansPBX provider`);
     }
 
     // If Other, import DIDs
