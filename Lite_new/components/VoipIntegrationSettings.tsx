@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Phone, Plus, Loader2, AlertCircle, CheckCircle, ChevronRight, X, Eye, EyeOff } from 'lucide-react';
-import { getAgents, addVoipProvider, getVoipProvider } from '../services/api';
+import { getAgents, addVoipProvider, getVoipProvider, getVoipNumbers, deleteVoipNumber } from '../services/api';
+import VoipProviderList from './VoipProviderList';
 
 interface Agent {
   _id: string;
@@ -24,6 +25,8 @@ const VoipIntegrationSettings: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [voipNumbers, setVoipNumbers] = useState<any[]>([]);
+  const [numbersLoading, setNumbersLoading] = useState(false);
 
   // Form State
   const [selectedAgent, setSelectedAgent] = useState('');
@@ -54,12 +57,14 @@ const VoipIntegrationSettings: React.FC = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [agentsRes, providersRes] = await Promise.all([
+        const [agentsRes, providersRes, numbersRes] = await Promise.all([
           getAgents(),
-          getVoipProvider()
+          getVoipProvider(),
+          getVoipNumbers()
         ]);
         setAgents(Array.isArray(agentsRes) ? agentsRes : []);
         setProviders(providersRes);
+        setVoipNumbers(numbersRes?.numbers || []);
       } catch (err) {
         console.error('Failed to fetch VOIP data:', err);
       } finally {
@@ -93,6 +98,28 @@ const VoipIntegrationSettings: React.FC = () => {
       did: '',
       endpointUrl: ''
     });
+  };
+
+  // Handle delete VOIP number
+  const handleDeleteNumber = async (numberId: string) => {
+    try {
+      setNumbersLoading(true);
+      await deleteVoipNumber(numberId);
+      // Refresh the list
+      const numbersRes = await getVoipNumbers();
+      setVoipNumbers(numbersRes?.numbers || []);
+    } catch (err) {
+      console.error('Failed to delete VOIP number:', err);
+      throw err;
+    } finally {
+      setNumbersLoading(false);
+    }
+  };
+
+  // Handle select number (for future details view)
+  const handleSelectNumber = (number: any) => {
+    console.log('Selected number:', number);
+    // TODO: Navigate to details view or open details modal
   };
 
   // Handle connect
@@ -235,6 +262,19 @@ const VoipIntegrationSettings: React.FC = () => {
             <Plus className="w-4 h-4" />
             <span>Connect VOIP</span>
           </button>
+        </div>
+      )}
+
+      {/* VOIP Provider List */}
+      {voipNumbers.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Connected Phone Numbers</h3>
+          <VoipProviderList
+            numbers={voipNumbers}
+            loading={numbersLoading}
+            onSelectNumber={handleSelectNumber}
+            onDeleteNumber={handleDeleteNumber}
+          />
         </div>
       )}
 

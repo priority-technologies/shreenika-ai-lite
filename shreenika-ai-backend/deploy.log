@@ -1,0 +1,117 @@
+Creating temporary archive of 10529 file(s) totalling 191.0 MiB before compression.
+Some files were not included in the source upload.
+
+Check the gcloud log [C:\Users\prior\AppData\Roaming\gcloud\logs\2026.02.14\18.29.50.388805.log] to see which files and the contents of the
+default gcloudignore file used (see `$ gcloud topic gcloudignore` to learn
+more).
+
+Uploading tarball of [.] to [gs://gen-lang-client-0348687456_cloudbuild/source/1771073991.44716-ea75ce4378bc44f4a1156febe0e99939.tgz]
+Created [https://cloudbuild.googleapis.com/v1/projects/gen-lang-client-0348687456/locations/global/builds/21ae2138-25d0-4107-8a1e-34bea362fe1a].
+Logs are available at [ https://console.cloud.google.com/cloud-build/builds/21ae2138-25d0-4107-8a1e-34bea362fe1a?project=507468019722 ].
+Waiting for build to complete. Polling interval: 1 second(s).
+----------------------------- REMOTE BUILD OUTPUT ------------------------------
+starting build "21ae2138-25d0-4107-8a1e-34bea362fe1a"
+
+FETCHSOURCE
+Fetching storage object: gs://gen-lang-client-0348687456_cloudbuild/source/1771073991.44716-ea75ce4378bc44f4a1156febe0e99939.tgz#1771074086715725
+Copying gs://gen-lang-client-0348687456_cloudbuild/source/1771073991.44716-ea75ce4378bc44f4a1156febe0e99939.tgz#1771074086715725...
+/ [0 files][    0.0 B/ 44.6 MiB]                                                / [1 files][ 44.6 MiB/ 44.6 MiB]                                                -
+Operation completed over 1 objects/44.6 MiB.
+BUILD
+Already have image (with digest): gcr.io/cloud-builders/gcb-internal
+Sending build context to Docker daemon  728.6kB
+Step 1/8 : FROM node:20-slim
+20-slim: Pulling from library/node
+4831516dd0cb: Pulling fs layer
+9d66d95167c2: Pulling fs layer
+1a0393491048: Pulling fs layer
+786a2dcd5a59: Pulling fs layer
+7aa087727009: Pulling fs layer
+9d66d95167c2: Verifying Checksum
+9d66d95167c2: Download complete
+7aa087727009: Verifying Checksum
+7aa087727009: Download complete
+786a2dcd5a59: Verifying Checksum
+786a2dcd5a59: Download complete
+4831516dd0cb: Verifying Checksum
+4831516dd0cb: Download complete
+1a0393491048: Verifying Checksum
+1a0393491048: Download complete
+4831516dd0cb: Pull complete
+9d66d95167c2: Pull complete
+1a0393491048: Pull complete
+786a2dcd5a59: Pull complete
+7aa087727009: Pull complete
+Digest: sha256:c6585df72c34172bebd8d36abed961e231d7d3b5cee2e01294c4495e8a03f687
+Status: Downloaded newer image for node:20-slim
+ ---> 1096d6b5560f
+Step 2/8 : WORKDIR /app
+ ---> Running in cd8dc13863c7
+Removing intermediate container cd8dc13863c7
+ ---> 4834c083452c
+Step 3/8 : COPY package*.json ./
+ ---> 9697484982b6
+Step 4/8 : RUN npm install
+ ---> Running in a374a0afe68e
+[91mnpm warn deprecated scmp@2.1.0: Just use Node.js's crypto.timingSafeEqual()
+[0m[91mnpm warn deprecated multer@1.4.5-lts.2: Multer 1.x is impacted by a number of vulnerabilities, which have been patched in 2.x. You should upgrade to the latest 2.x version.
+[0m[91mnpm warn deprecated lodash.get@4.4.2: This package is deprecated. Use the optional chaining (?.) operator instead.
+[0m[91mnpm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+[0m[91mnpm warn deprecated json2csv@5.0.7: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+[0m[91mnpm warn deprecated glob@10.5.0: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+[0m
+added 409 packages, and audited 410 packages in 10s
+
+50 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+[91mnpm notice
+npm notice New major version of npm available! 10.8.2 -> 11.10.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.10.0
+npm notice To update run: npm install -g npm@11.10.0
+npm notice
+[0mRemoving intermediate container a374a0afe68e
+ ---> 206165eed782
+Step 5/8 : COPY . .
+ ---> be08ab6e932c
+Step 6/8 : EXPOSE 8080
+ ---> Running in 665335f2dbf7
+Removing intermediate container 665335f2dbf7
+ ---> 25f31addb929
+Step 7/8 : ENV PORT=8080
+ ---> Running in 3672303e75ac
+Removing intermediate container 3672303e75ac
+ ---> 280f4ba5f2f8
+Step 8/8 : CMD ["node", "src/server.js"]
+ ---> Running in 6e5c3560b22e
+Removing intermediate container 6e5c3560b22e
+ ---> 58937f240a4b
+Successfully built 58937f240a4b
+Successfully tagged gcr.io/gen-lang-client-0348687456/shreenika-ai-backend:latest
+PUSH
+Pushing gcr.io/gen-lang-client-0348687456/shreenika-ai-backend:latest
+The push refers to repository [gcr.io/gen-lang-client-0348687456/shreenika-ai-backend]
+f0503ae25957: Preparing
+d4583eb68e3a: Preparing
+8ea2f777d0f7: Preparing
+8fa362f29c68: Preparing
+0562c05a6550: Preparing
+48074ef03794: Preparing
+c004b55cc6c1: Preparing
+9159be211277: Preparing
+e48af84b2108: Preparing
+0562c05a6550: Layer already exists
+c004b55cc6c1: Layer already exists
+9159be211277: Layer already exists
+48074ef03794: Layer already exists
+e48af84b2108: Layer already exists
+f0503ae25957: Pushed
+8fa362f29c68: Pushed
+8ea2f777d0f7: Pushed
+d4583eb68e3a: Pushed
+latest: digest: sha256:2c14b1dfcb38a05b018988940cf995d2fda070f3e2c70bef8b87bbbee8f7ea4c size: 2206
+DONE
+--------------------------------------------------------------------------------
+ID                                    CREATE_TIME                DURATION  SOURCE                                                                                                   IMAGES                                                            STATUS
+21ae2138-25d0-4107-8a1e-34bea362fe1a  2026-02-14T13:01:28+00:00  56S       gs://gen-lang-client-0348687456_cloudbuild/source/1771073991.44716-ea75ce4378bc44f4a1156febe0e99939.tgz  gcr.io/gen-lang-client-0348687456/shreenika-ai-backend (+1 more)  SUCCESS

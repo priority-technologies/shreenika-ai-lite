@@ -227,6 +227,11 @@ export const purchaseNumber = (phoneNumber: string) =>
     body: JSON.stringify({ phoneNumber }),
   }, "core");
 
+export const deleteVoipNumber = (numberId: string) =>
+  apiFetch(`/voip/numbers/${numberId}`, {
+    method: "DELETE",
+  }, "core");
+
 export const setupVoipForRegistration = (payload: {
   provider: string;
   accountSid?: string;

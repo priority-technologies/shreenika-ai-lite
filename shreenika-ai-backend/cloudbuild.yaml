@@ -1,0 +1,43 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
+      - '.'
+    dir: 'shreenika-ai-backend'
+
+  # Push the image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend'
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'run'
+      - '-f=.'
+      - '-i=gcr.io/$PROJECT_ID/shreenika-ai-backend:$COMMIT_SHA'
+      - '-l=gcr.io/cloud-builders/gke-deploy'
+      - '-o=/workspace/output'
+
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'replace'
+      - '-f=/workspace/output/expanded'
+      - '--filename='
+      - '--namespace='
+
+images:
+  - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1800s'

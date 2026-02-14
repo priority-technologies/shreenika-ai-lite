@@ -42,7 +42,7 @@ const callSchema = new mongoose.Schema(
 
     voipProvider: {
       type: String,
-      enum: ["Twilio", "Bland AI", "Vapi", "Vonage", "Other"],
+      enum: ["Twilio", "Bland AI", "Vapi", "Vonage", "SansPBX", "Other"],
       default: "Twilio"
     },
 
