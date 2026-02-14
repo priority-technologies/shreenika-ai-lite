@@ -169,19 +169,27 @@ export const updateAgent = async (req, res) => {
   try {
     const updateData = restructurePayload(req.body);
 
+    console.log("DEBUG: updateAgent called");
+    console.log("DEBUG: Agent ID:", req.params.id);
+    console.log("DEBUG: User ID:", req.user._id);
+    console.log("DEBUG: Update Data:", JSON.stringify(updateData, null, 2));
+
     const agent = await Agent.findOneAndUpdate(
       { _id: req.params.id, userId: req.user._id },
       updateData,
-      { new: true }
+      { new: true, runValidators: true }
     );
 
     if (!agent) {
+      console.error("DEBUG: Agent not found for update");
       return res.status(404).json({ error: "Agent not found" });
     }
 
+    console.log("DEBUG: Agent updated successfully");
     res.json(flattenAgent(agent));
   } catch (err) {
-    console.error("UPDATE AGENT ERROR:", err);
+    console.error("UPDATE AGENT ERROR:", err.message);
+    console.error("UPDATE AGENT FULL ERROR:", err);
     res.status(500).json({ error: err.message });
   }
 };
