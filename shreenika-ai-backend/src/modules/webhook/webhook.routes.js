@@ -9,12 +9,12 @@ import {
   getWebhookLogs,
   toggleWebhookStatus,
 } from './webhook.controller.js';
-import { authenticate } from '../auth/auth.middleware.js';
+import { requireAuth } from '../auth/auth.middleware.js';
 
 const router = Router();
 
 // All webhook routes require authentication
-router.use(authenticate);
+router.use(requireAuth);
 
 /**
  * Webhook Management
