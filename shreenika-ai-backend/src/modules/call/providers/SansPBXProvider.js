@@ -70,21 +70,27 @@ export class SansPBXProvider extends BaseProvider {
       const fetch = (await import('node-fetch')).default;
 
       // Normalize phone numbers
-      // SansPBX expects numbers in format: 911234567890 (country code + 10 digits)
+      // SansPBX team confirmed format requirements:
+      // - call_to: Full destination number (10 digits for India: prepend 91 if needed)
+      // - caller_id: DID format (7 digits only, no country code)
       let normalizedTo = toPhone.replace(/[\D]/g, '');
       let normalizedFrom = fromPhone.replace(/[\D]/g, '');
 
-      // Add country code if missing (for 10-digit Indian numbers)
+      // For call_to: Add country code if missing (for 10-digit Indian numbers)
       if (normalizedTo.length === 10) {
         normalizedTo = '91' + normalizedTo;
       }
-      if (normalizedFrom.length === 10) {
-        normalizedFrom = '91' + normalizedFrom;
+
+      // For caller_id (DID): Extract last 7 digits per SansPBX requirements
+      // This handles cases like: +911234567890 → 4567890, or 6745647 → 6745647
+      if (normalizedFrom.length > 7) {
+        normalizedFrom = normalizedFrom.slice(-7);
       }
 
       console.log(`📞 SansPBX: Initiating call`);
       console.log(`   Input - To: ${toPhone}, From: ${fromPhone}`);
-      console.log(`   Normalized - To: ${normalizedTo}, From: ${normalizedFrom}`);
+      console.log(`   Normalized - To: ${normalizedTo} (destination)`);
+      console.log(`   Normalized - From: ${normalizedFrom} (DID - 7 digits per SansPBX team)`);
       console.log(`   Payload - call_to: ${normalizedTo}, caller_id: ${normalizedFrom}`);
 
       const payload = {
