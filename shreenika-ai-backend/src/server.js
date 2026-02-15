@@ -13,6 +13,7 @@ import agentRoutes from "./modules/agent/agent.routes.js";
 import leadRoutes from "./modules/lead/lead.routes.js";
 import callRoutes from "./modules/call/call.routes.js";
 import twilioRoutes from "./modules/call/twilio.routes.js";
+import testAgentRoutes from "./modules/call/test-agent.routes.js";
 import knowledgeRoutes from "./modules/knowledge/knowledge.routes.js";
 import billingRoutes from "./modules/billing/billing.routes.js";
 import stripeRoutes from "./modules/billing/stripe.routes.js";
@@ -25,6 +26,7 @@ import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import webhookRoutes from "./modules/webhook/webhook.routes.js";
 import { handleMediaStream } from "./modules/call/twilio.controller.js";
+import { handleTestAgentUpgrade } from "./modules/call/test-agent.handler.js";
 import { WebSocketServer } from "ws";
 
 /* =======================
@@ -144,6 +146,7 @@ app.use("/voip", voipRoutes);
 app.use("/voice", voiceRoutes);
 app.use("/webhooks", webhookRoutes);
 app.use("/api/agents", agentRoutes);
+app.use("/api/test-agent", testAgentRoutes);
 app.use("/settings/api-keys", apiKeyRoutes);
 app.use("/api/v1", apiV1Routes);
 
@@ -199,8 +202,15 @@ app.use((err, req, res, next) => {
 const wss = new WebSocketServer({ noServer: true });
 
 httpServer.on('upgrade', (req, res, head) => {
+  // Handle test agent WebSocket upgrade (browser-based voice testing)
+  if (req.url.startsWith('/test-agent/')) {
+    const sessionId = req.url.split('/')[2];
+    wss.handleUpgrade(req, res, head, (ws) => {
+      handleTestAgentUpgrade(ws, req, sessionId);
+    });
+  }
   // Handle media stream WebSocket upgrade
-  if (req.url.startsWith('/media-stream/')) {
+  else if (req.url.startsWith('/media-stream/')) {
     wss.handleUpgrade(req, res, head, (ws) => {
       // Extract callSid from URL
       const callSid = req.url.split('/').pop();
