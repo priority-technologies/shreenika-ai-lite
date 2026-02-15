@@ -122,22 +122,25 @@ export class SansPBXProvider extends BaseProvider {
 
       console.log(`📥 SansPBX: Dial response:`, JSON.stringify(data, null, 2));
 
+      // Handle nested response structure - SansPBX wraps response in a 'data' field
+      const actualResponse = data.data || data;
+
       // Check for success indicators in response
       // SansPBX may return different status values
-      if (data.status && data.status !== 'success') {
-        throw new Error(`API returned status: ${data.status}`);
+      if (actualResponse.status && actualResponse.status !== 'success') {
+        throw new Error(`API returned status: ${actualResponse.status}`);
       }
 
       // If we have a call ID, the call was initiated
       // SansPBX returns: callid (lowercase)
-      if (!data.call_id && !data.id && !data.Callid && !data.callid) {
+      if (!actualResponse.call_id && !actualResponse.id && !actualResponse.Callid && !actualResponse.callid) {
         throw new Error(`No call ID in response: ${JSON.stringify(data)}`);
       }
 
       console.log(`✅ SansPBX: Call initiated successfully`);
 
       // Extract call ID from response (SansPBX uses 'callid' in lowercase)
-      const callId = data.callid || data.call_id || data.id || data.Callid || `sanspbx_${Date.now()}`;
+      const callId = actualResponse.callid || actualResponse.call_id || actualResponse.id || actualResponse.Callid || `sanspbx_${Date.now()}`;
 
       return {
         callSid: callId,
