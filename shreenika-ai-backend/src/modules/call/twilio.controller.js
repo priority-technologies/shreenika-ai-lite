@@ -125,7 +125,7 @@ export const startOutboundCall = async (req, res) => {
     console.log(`📱 [startOutboundCall] Creating provider instance via ProviderFactory...`);
     let provider;
     try {
-      provider = ProviderFactory.createProvider(voipProvider);
+      provider = await ProviderFactory.createProvider(voipProvider);
       console.log(`✅ [startOutboundCall] Provider instance created successfully`);
     } catch (err) {
       console.error(`❌ [startOutboundCall] Provider creation failed: ${err.message}`);

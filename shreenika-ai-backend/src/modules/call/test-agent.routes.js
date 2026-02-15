@@ -1,6 +1,6 @@
 import express from 'express';
 import * as testAgentController from './test-agent.controller.js';
-import { authenticateToken } from '../../middleware/auth.js';
+import { requireAuth } from '../../modules/auth/auth.middleware.js';
 
 const router = express.Router();
 
@@ -10,13 +10,13 @@ const router = express.Router();
  * Body: { agentId: string }
  * Response: { success, sessionId, wsUrl, maxDuration }
  */
-router.post('/start', authenticateToken, testAgentController.startTestAgent);
+router.post('/start', requireAuth, testAgentController.startTestAgent);
 
 /**
  * POST /api/test-agent/:sessionId/end
  * End a test agent session and log usage
  * Response: { success, durationSeconds, cost }
  */
-router.post('/:sessionId/end', authenticateToken, testAgentController.endTestAgent);
+router.post('/:sessionId/end', requireAuth, testAgentController.endTestAgent);
 
 export default router;
