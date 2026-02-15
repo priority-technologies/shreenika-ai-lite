@@ -4,6 +4,7 @@ import {
   getContactsService,
   importContactsService
 } from "./contact.service.js";
+import { webhookEmitter } from "../webhook/webhook.emitter.js";
 
 /* =========================
    CREATE CONTACT (MANUAL)
@@ -11,6 +12,12 @@ import {
 export const createContact = async (req, res) => {
   try {
     const contact = await createContactService(req.user.id, req.body);
+
+    // Trigger webhook event
+    webhookEmitter.onContactCreated(req.user.id, contact).catch((err) =>
+      console.error("❌ Webhook error:", err.message)
+    );
+
     return res.status(201).json(contact);
   } catch (err) {
     console.error("CREATE CONTACT ERROR:", err);

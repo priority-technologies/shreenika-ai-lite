@@ -1,4 +1,5 @@
 import Lead from "./lead.model.js";
+import { webhookEmitter } from "../webhook/webhook.emitter.js";
 
 export const createLead = async (req, res) => {
   try {
@@ -6,6 +7,12 @@ export const createLead = async (req, res) => {
       userId: req.user._id,
       ...req.body
     });
+
+    // Trigger webhook event
+    webhookEmitter.onLeadCreated(req.user._id, lead.toObject()).catch((err) =>
+      console.error("❌ Webhook error:", err.message)
+    );
+
     res.json(lead);
   } catch (err) {
     console.error("Create lead error:", err);
@@ -40,6 +47,12 @@ export const updateLead = async (req, res) => {
       { new: true }
     );
     if (!lead) return res.status(404).json({ error: "Not found" });
+
+    // Trigger webhook event for updated lead
+    webhookEmitter.onLeadUpdated(req.user._id, lead.toObject(), Object.keys(req.body)).catch((err) =>
+      console.error("❌ Webhook error:", err.message)
+    );
+
     res.json(lead);
   } catch (err) {
     res.status(500).json({ error: err.message });

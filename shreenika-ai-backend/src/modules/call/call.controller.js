@@ -5,6 +5,7 @@ import { processCallAI } from "./call.processor.js";
 import { io } from "../../server.js";
 import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
+import { webhookEmitter } from "../webhook/webhook.emitter.js";
 
 let activeCampaigns = new Map(); // userId -> { active: boolean, current: number, total: number }
 
@@ -323,6 +324,11 @@ export const completeCall = async (req, res) => {
     { userId: req.user._id, month },
     { $inc: { voiceMinutesUsed: minutes } },
     { upsert: true }
+  );
+
+  // Trigger webhook event for completed call
+  webhookEmitter.onCallCompleted(req.user._id, call.toObject()).catch((err) =>
+    console.error("❌ Webhook error:", err.message)
   );
 
   if (!call.aiProcessed) {
