@@ -6,6 +6,8 @@ import { getTwilioClient } from "../../config/twilio.client.js";
 import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
 import { VoicePipeline } from "../voice/voicePipeline.js";
+import { CallControlService, createCallControl } from "./call.control.service.js";
+import { createTTSService, shouldUseTTS } from "../voice/tts.service.js";
 
 const getMonthKey = () => {
   const d = new Date();
@@ -96,6 +98,28 @@ export const startOutboundCall = async (req, res) => {
       status: "INITIATED",
       voipProvider: voipProvider.provider
     });
+
+    // Initialize call control (40% priority - duration, silence, voicemail enforcement)
+    const callControl = await createCallControl(call._id, agentId);
+    console.log(`🎛️  [startOutboundCall] Call Control initialized`);
+
+    // Initialize TTS service if agent has custom voice settings (60% priority)
+    const agent = await Agent.findById(agentId);
+    const ttsService = shouldUseTTS(agent) ? await createTTSService(agent) : null;
+    if (ttsService) {
+      console.log(`🎤 [startOutboundCall] TTS Service initialized with characteristics: ${agent.characteristics.join(', ') || 'default'}`);
+    } else {
+      console.log(`🎤 [startOutboundCall] Using Gemini Live native voice (no TTS customization)`);
+    }
+
+    // Store call control & TTS in call metadata for mediastream handler
+    call.callControlConfig = {
+      maxCallDuration: callControl.maxCallDuration,
+      silenceDetectionMs: callControl.silenceDetectionMs,
+      voicemailDetection: callControl.voicemailDetection
+    };
+    call.ttsConfig = ttsService ? ttsService.getAudioProfile() : null;
+    await call.save();
 
     // Instantiate the correct provider
     console.log(`📱 [startOutboundCall] Creating provider instance via ProviderFactory...`);
