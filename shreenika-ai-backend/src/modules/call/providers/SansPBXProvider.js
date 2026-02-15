@@ -128,18 +128,22 @@ export class SansPBXProvider extends BaseProvider {
         throw new Error(`API returned status: ${data.status}`);
       }
 
-      // If we have a call_id, the call was initiated
-      if (!data.call_id && !data.id && !data.Callid) {
+      // If we have a call ID, the call was initiated
+      // SansPBX returns: callid (lowercase)
+      if (!data.call_id && !data.id && !data.Callid && !data.callid) {
         throw new Error(`No call ID in response: ${JSON.stringify(data)}`);
       }
 
       console.log(`✅ SansPBX: Call initiated successfully`);
 
+      // Extract call ID from response (SansPBX uses 'callid' in lowercase)
+      const callId = data.callid || data.call_id || data.id || data.Callid || `sanspbx_${Date.now()}`;
+
       return {
-        callSid: data.call_id || data.id || data.Callid || `sanspbx_${Date.now()}`,
+        callSid: callId,
         status: 'initiated',
         provider: 'SansPBX',
-        providerCallId: data.call_id || data.id || data.Callid
+        providerCallId: callId
       };
     } catch (error) {
       console.error(`❌ SansPBX: Call initiation failed: ${error.message}`);
