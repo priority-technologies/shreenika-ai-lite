@@ -24,19 +24,6 @@ const LeadManager: React.FC = () => {
     website: ""
   });
 
-  const COUNTRY_CODES = [
-    { code: "+1", label: "US/Canada" },
-    { code: "+44", label: "UK" },
-    { code: "+91", label: "India" },
-    { code: "+61", label: "Australia" },
-    { code: "+86", label: "China" },
-    { code: "+81", label: "Japan" },
-    { code: "+33", label: "France" },
-    { code: "+49", label: "Germany" },
-    { code: "+39", label: "Italy" },
-    { code: "+34", label: "Spain" }
-  ];
-
   /* =========================
      LOAD CONTACTS (FIXED)
   ========================= */
@@ -92,26 +79,14 @@ const LeadManager: React.FC = () => {
   const handleAddManualLead = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate phone is numeric
-    if (!/^\d+$/.test(newLead.phone.replace(/[\s\-\(\)]/g, ''))) {
-      alert('Phone number must contain only digits (and optional spaces/dashes)');
-      return;
-    }
-
-    // Validate email has @
-    if (!newLead.email.includes('@')) {
-      alert('Email must contain @ symbol');
-      return;
-    }
-
-    // Combine country code with phone
+    // Store phone with country code in E.164 format
     const fullPhone = newLead.countryCode + newLead.phone.replace(/[\s\-\(\)]/g, '');
 
     const payload = {
       firstName: newLead.firstName,
       lastName: newLead.lastName,
       phone: fullPhone,
-      email: newLead.email,
+      email: newLead.email || undefined,
       address: newLead.address,
       company: {
         name: newLead.companyName,
@@ -164,22 +139,23 @@ const LeadManager: React.FC = () => {
   ========================= */
   const handleEdit = (lead: Lead) => {
     setEditingLeadId(lead.id);
-    // Parse country code from phone if present, otherwise default to +1
-    let countryCode = "+1";
-    let phoneWithoutCode = lead.phone;
-    if (lead.phone && lead.phone.startsWith("+")) {
-      const match = lead.phone.match(/^\+\d+/);
+    // Parse country code from stored phone (E.164 format like +1234567890)
+    let cc = "+1";
+    let ph = lead.phone || "";
+    if (ph.startsWith("+")) {
+      // Try common country code lengths (1-3 digits after +)
+      const match = ph.match(/^(\+\d{1,3})(.*)/);
       if (match) {
-        countryCode = match[0];
-        phoneWithoutCode = lead.phone.substring(countryCode.length);
+        cc = match[1];
+        ph = match[2];
       }
     }
     setNewLead({
       firstName: lead.firstName,
       lastName: lead.lastName,
-      countryCode,
-      phone: phoneWithoutCode,
-      email: lead.email,
+      countryCode: cc,
+      phone: ph,
+      email: lead.email || "",
       companyName: lead.company?.name || "",
       totalEmployees: lead.company?.employees?.toString() || "",
       address: lead.address || "",
@@ -354,9 +330,8 @@ const LeadManager: React.FC = () => {
               </div>
 
               <input
-                required
                 type="email"
-                placeholder="Email (e.g. user@example.com)"
+                placeholder="Email (optional)"
                 className="w-full border rounded-lg p-2"
                 value={newLead.email}
                 onChange={e => setNewLead({ ...newLead, email: e.target.value })}
@@ -364,28 +339,37 @@ const LeadManager: React.FC = () => {
 
               <div className="flex gap-2">
                 <select
-                  required
-                  className="w-24 border rounded-lg p-2"
                   value={newLead.countryCode}
                   onChange={e => setNewLead({ ...newLead, countryCode: e.target.value })}
+                  className="border rounded-lg p-2 w-28 bg-white text-sm"
                 >
-                  {COUNTRY_CODES.map(cc => (
-                    <option key={cc.code} value={cc.code}>
-                      {cc.code} {cc.label}
-                    </option>
-                  ))}
+                  <option value="+1">+1 US</option>
+                  <option value="+44">+44 UK</option>
+                  <option value="+91">+91 IN</option>
+                  <option value="+61">+61 AU</option>
+                  <option value="+49">+49 DE</option>
+                  <option value="+33">+33 FR</option>
+                  <option value="+81">+81 JP</option>
+                  <option value="+86">+86 CN</option>
+                  <option value="+971">+971 UAE</option>
+                  <option value="+966">+966 SA</option>
+                  <option value="+65">+65 SG</option>
+                  <option value="+55">+55 BR</option>
+                  <option value="+52">+52 MX</option>
+                  <option value="+39">+39 IT</option>
+                  <option value="+34">+34 ES</option>
+                  <option value="+82">+82 KR</option>
+                  <option value="+31">+31 NL</option>
+                  <option value="+46">+46 SE</option>
+                  <option value="+41">+41 CH</option>
+                  <option value="+353">+353 IE</option>
                 </select>
                 <input
                   required
-                  type="tel"
-                  placeholder="Phone number (digits only)"
+                  placeholder="Phone Number"
                   className="flex-1 border rounded-lg p-2"
                   value={newLead.phone}
-                  onChange={e => {
-                    // Allow only digits, spaces, dashes, and parentheses
-                    const value = e.target.value.replace(/[^\d\s\-()]/g, '');
-                    setNewLead({ ...newLead, phone: value });
-                  }}
+                  onChange={e => setNewLead({ ...newLead, phone: e.target.value })}
                 />
               </div>
 

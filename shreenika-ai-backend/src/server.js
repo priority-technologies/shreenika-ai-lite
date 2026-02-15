@@ -23,6 +23,7 @@ import voipRoutes from "./modules/voip/voip.routes.js";
 import voiceRoutes from "./modules/voice/voice.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
+import webhookRoutes from "./modules/webhook/webhook.routes.js";
 import { handleMediaStream } from "./modules/call/twilio.controller.js";
 import { WebSocketServer } from "ws";
 
@@ -141,6 +142,7 @@ app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
 app.use("/voice", voiceRoutes);
+app.use("/webhooks", webhookRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/settings/api-keys", apiKeyRoutes);
 app.use("/api/v1", apiV1Routes);
