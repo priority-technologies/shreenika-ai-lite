@@ -30,7 +30,7 @@ const callSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["INITIATED", "RINGING", "ANSWERED", "COMPLETED", "FAILED", "MISSED"],
+      enum: ["INITIATED", "DIALING", "RINGING", "ANSWERED", "COMPLETED", "FAILED", "MISSED", "NO_ANSWER"],
       default: "INITIATED",
       index: true
     },
@@ -62,6 +62,20 @@ const callSchema = new mongoose.Schema(
     durationSeconds: {
       type: Number,
       default: 0
+    },
+
+    answeredAt: {
+      type: Date
+    },
+
+    endedAt: {
+      type: Date
+    },
+
+    campaignId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Campaign",
+      index: true
     },
 
     recordingUrl: {

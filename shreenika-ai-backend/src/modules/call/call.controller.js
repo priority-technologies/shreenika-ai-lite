@@ -1,13 +1,17 @@
 import Call from "./call.model.js";
 import Lead from "../lead/lead.model.js";
 import Usage from "../usage/usage.model.js";
+import Campaign from "./campaign.model.js";
+import CallLog from "./callLog.model.js";
 import { processCallAI } from "./call.processor.js";
 import { io } from "../../server.js";
 import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
 import { webhookEmitter } from "../webhook/webhook.emitter.js";
+import Agent from "../agent/agent.model.js";
 
-let activeCampaigns = new Map(); // userId -> { active: boolean, current: number, total: number }
+// Track active campaigns by ID (for pause/resume)
+let activeCampaigns = new Map(); // campaignId -> { active: boolean, paused: boolean }
 
 const getMonthKey = () => {
   const d = new Date();
@@ -15,7 +19,11 @@ const getMonthKey = () => {
 };
 
 /**
- * Start Campaign (Sequential Calling)
+ * Start Campaign (Batch Processing with Real Webhooks)
+ * - Uses 5 concurrent calls instead of sequential
+ * - Waits for real webhook updates instead of hardcoded 5-second timeout
+ * - Creates detailed call logs for transparency
+ * - Persists campaign state to database
  */
 export const startCampaign = async (req, res) => {
   try {
@@ -26,154 +34,459 @@ export const startCampaign = async (req, res) => {
       return res.status(400).json({ error: "No leads selected" });
     }
 
-    // Check if already running
-    if (activeCampaigns.has(userId.toString()) && activeCampaigns.get(userId.toString()).active) {
-      return res.status(400).json({ error: "Campaign already running" });
+    // Validate PUBLIC_BASE_URL
+    if (!process.env.PUBLIC_BASE_URL) {
+      return res.status(500).json({ error: "PUBLIC_BASE_URL env var not set" });
     }
 
-    // Mark campaign as active
-    activeCampaigns.set(userId.toString(), {
-      active: true,
-      current: 0,
-      total: leadIds.length,
+    // Create campaign record in database
+    const campaign = await Campaign.create({
+      userId,
+      agentId,
+      name: campaignName || `Campaign-${Date.now()}`,
+      leads: leadIds,
+      totalLeads: leadIds.length,
+      status: "RUNNING",
+      startedAt: new Date()
     });
 
+    // Track campaign as active
+    activeCampaigns.set(campaign._id.toString(), {
+      active: true,
+      paused: false
+    });
+
+    console.log(`\n📞 [Campaign] Starting campaign: ${campaign._id}`);
+    console.log(`   Name: ${campaign.name}`);
+    console.log(`   Agent: ${agentId}`);
+    console.log(`   Total Leads: ${leadIds.length}`);
+    console.log(`   Concurrent Calls: 5\n`);
+
+    // Respond immediately (async processing)
     res.json({
       success: true,
+      campaignId: campaign._id,
       message: `Campaign started with ${leadIds.length} leads`,
+      estimatedTime: `~${Math.ceil((leadIds.length / 5) * 1)}min (batch of 5)`
     });
 
-    // Validate PUBLIC_BASE_URL before starting campaign
-    if (!process.env.PUBLIC_BASE_URL) {
-      console.error("❌ PUBLIC_BASE_URL env var is not set, campaign webhooks will fail");
-    }
+    // Emit campaign started event
+    io.emit("campaign:started", {
+      userId: userId.toString(),
+      campaignId: campaign._id.toString(),
+      totalLeads: leadIds.length
+    });
 
-    // Process calls sequentially
-    for (let i = 0; i < leadIds.length; i++) {
-      const campaign = activeCampaigns.get(userId.toString());
-      if (!campaign || !campaign.active) break; // Campaign stopped
+    // Process campaign asynchronously (batch processor)
+    processCampaignBatches(campaign._id, leadIds, agentId, userId);
 
-      const leadId = leadIds[i];
-      const lead = await Lead.findById(leadId);
+  } catch (err) {
+    console.error("❌ Campaign error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
 
-      if (!lead) continue;
+/**
+ * Process campaign leads in batches (5 concurrent calls)
+ */
+async function processCampaignBatches(campaignId, leadIds, agentId, userId) {
+  const BATCH_SIZE = 5;
+  const CALL_TIMEOUT = 120000; // 2 minutes max wait for call to complete
+  const MAX_RETRIES = 2;
 
-      // Emit progress
-      campaign.current = i + 1;
+  const campaign = await Campaign.findById(campaignId);
+  if (!campaign) return;
+
+  try {
+    // Process leads in batches
+    for (let batchIndex = 0; batchIndex < leadIds.length; batchIndex += BATCH_SIZE) {
+      // Check if campaign is paused
+      const activeCampaign = activeCampaigns.get(campaignId.toString());
+      if (!activeCampaign || !activeCampaign.active) {
+        console.log(`⏸️ Campaign paused: ${campaignId}`);
+        campaign.status = "PAUSED";
+        campaign.pausedAt = new Date();
+        await campaign.save();
+        break;
+      }
+
+      const batch = leadIds.slice(batchIndex, batchIndex + BATCH_SIZE);
+
+      console.log(`\n📦 Batch ${Math.floor(batchIndex / BATCH_SIZE) + 1}: Processing ${batch.length} calls concurrently...`);
+
+      // Process 5 calls in parallel
+      await Promise.all(
+        batch.map(leadId =>
+          processSingleCall(
+            campaignId,
+            leadId,
+            agentId,
+            userId,
+            CALL_TIMEOUT,
+            MAX_RETRIES
+          ).catch(err => {
+            console.error(`❌ Batch error for lead ${leadId}:`, err.message);
+            // Continue with next call on error
+          })
+        )
+      );
+
+      // Update campaign progress
+      const completedCount = Math.min(batchIndex + BATCH_SIZE, leadIds.length);
+      campaign.completedLeads = completedCount;
+      await campaign.save();
+
+      // Calculate stats
+      const successRate = campaign.successfulCalls > 0
+        ? Math.round((campaign.successfulCalls / completedCount) * 100)
+        : 0;
+
+      // Emit progress update
       io.emit("campaign:progress", {
         userId: userId.toString(),
-        current: campaign.current,
-        total: campaign.total,
+        campaignId: campaignId.toString(),
+        current: completedCount,
+        total: campaign.totalLeads,
+        successfulCalls: campaign.successfulCalls,
+        failedCalls: campaign.failedCalls,
+        successRate
       });
 
+      console.log(`   ✅ Batch completed: ${completedCount}/${campaign.totalLeads} leads processed (${successRate}% success)`);
+    }
+
+    // Campaign complete
+    campaign.status = "COMPLETED";
+    campaign.completedAt = new Date();
+    await campaign.save();
+
+    activeCampaigns.delete(campaignId.toString());
+
+    console.log(`\n✅ Campaign completed: ${campaignId}`);
+    console.log(`   Total: ${campaign.totalLeads}`);
+    console.log(`   Successful: ${campaign.successfulCalls}`);
+    console.log(`   Failed: ${campaign.failedCalls}`);
+    console.log(`   Average Duration: ${campaign.averageDuration}s\n`);
+
+    io.emit("campaign:completed", {
+      userId: userId.toString(),
+      campaignId: campaignId.toString(),
+      stats: {
+        total: campaign.totalLeads,
+        successful: campaign.successfulCalls,
+        failed: campaign.failedCalls,
+        missed: campaign.missedCalls,
+        successRate: campaign.successRate
+      }
+    });
+
+  } catch (err) {
+    console.error(`❌ Campaign processing failed: ${err.message}`);
+    campaign.status = "FAILED";
+    await campaign.save();
+    activeCampaigns.delete(campaignId.toString());
+    io.emit("campaign:failed", {
+      userId: userId.toString(),
+      campaignId: campaignId.toString(),
+      error: err.message
+    });
+  }
+}
+
+/**
+ * Process a single call - wait for real webhook instead of mock data
+ */
+async function processSingleCall(campaignId, leadId, agentId, userId, callTimeout, maxRetries = 2) {
+  const campaign = await Campaign.findById(campaignId);
+  const lead = await Lead.findById(leadId);
+  const agent = await Agent.findById(agentId);
+
+  if (!lead) {
+    console.warn(`   ⚠️ Lead not found: ${leadId}`);
+    return;
+  }
+
+  let call = null;
+  let retryCount = 0;
+
+  while (retryCount < maxRetries) {
+    try {
       // Create call record
-      const call = await Call.create({
+      call = await Call.create({
         userId,
         agentId,
         leadId,
         direction: "OUTBOUND",
         status: "INITIATED",
         phoneNumber: lead.phone,
-        leadName: `${lead.firstName} ${lead.lastName}`,
+        leadName: `${lead.firstName} ${lead.lastName}`
       });
 
-      // Emit call started
-      io.emit("call:started", {
-        userId: userId.toString(),
+      // Create initial log
+      await CallLog.create({
         callId: call._id,
-        phone: lead.phone,
+        campaignId,
+        userId,
+        leadId,
+        leadName: call.leadName,
+        phoneNumber: lead.phone,
+        event: "INITIATED",
+        details: `Campaign call initiated for lead ${lead.firstName} ${lead.lastName}`,
+        voipProvider: null
       });
 
       // Get agent's VOIP provider
       const voipProvider = await getAgentProviderOrFallback(agentId);
       if (!voipProvider) {
-        console.error(`❌ Agent ${agentId} has no VOIP provider assigned, skipping lead ${leadId}`);
-        call.status = "FAILED";
-        await call.save();
-        continue;
+        throw new Error(`Agent ${agentId} has no VOIP provider assigned`);
       }
 
       const fromPhone = await getAgentPhoneNumber(agentId);
       if (!fromPhone && voipProvider.provider !== 'Twilio') {
-        console.error(`❌ Agent ${agentId} has no phone number assigned, skipping lead ${leadId}`);
-        call.status = "FAILED";
-        await call.save();
-        continue;
+        throw new Error(`Agent ${agentId} has no phone number assigned`);
       }
 
-      try {
-        const provider = ProviderFactory.createProvider(voipProvider);
+      // Create VOIP provider instance
+      const provider = ProviderFactory.createProvider(voipProvider);
 
-        const callResult = await provider.initiateCall({
-          toPhone: lead.phone,
-          fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
-          webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
-          statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
-        });
+      // Initiate call via VOIP
+      const callResult = await provider.initiateCall({
+        toPhone: lead.phone,
+        fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
+        webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
+        statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
+      });
 
-        call.twilioCallSid = callResult.callSid;
-        call.providerCallId = callResult.providerCallId;
-        call.voipProvider = callResult.provider;
-        call.status = "INITIATED";
-        await call.save();
-
-        console.log(`✅ Campaign call initiated: ${callResult.callSid} via ${callResult.provider}`);
-
-        // Wait for call to complete (in production, use webhook status updates)
-        // For now, simulate with timeout
-        await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      } catch (err) {
-        console.error(`❌ Failed to initiate call for lead ${leadId}:`, err.message);
-        call.status = "FAILED";
-        await call.save();
-        continue;
-      }
-
-      // Update call duration and status
-      const duration = Math.floor(Math.random() * 60) + 15;
-      call.status = "COMPLETED";
-      call.durationSeconds = duration;
-      call.endedAt = new Date();
+      call.twilioCallSid = callResult.callSid;
+      call.providerCallId = callResult.providerCallId;
+      call.voipProvider = callResult.provider;
+      call.status = "DIALING";
       await call.save();
 
-      // Usage tracking
-      const minutes = Math.ceil(duration / 60);
-      const month = getMonthKey();
-      await Usage.findOneAndUpdate(
-        { userId, month },
-        { $inc: { voiceMinutesUsed: minutes, callsCount: 1 } },
-        { upsert: true }
-      );
+      // Log dialing event
+      await CallLog.create({
+        callId: call._id,
+        campaignId,
+        userId,
+        leadId,
+        leadName: call.leadName,
+        phoneNumber: lead.phone,
+        event: "DIALING",
+        details: `Call initiated via ${callResult.provider}. Waiting for connection...`,
+        voipProvider: callResult.provider
+      });
 
-      // AI processing
-      if (!call.aiProcessed) {
-        processCallAI(call._id).catch((err) =>
-          console.error("❌ AI processing failed:", err.message)
+      console.log(`   📞 ${lead.firstName} ${lead.lastName} (${lead.phone}) - DIALING via ${callResult.provider}`);
+
+      // Wait for call to complete (webhook will update status)
+      // Maximum wait time is 2 minutes
+      const startTime = Date.now();
+      let callCompleted = false;
+
+      while (Date.now() - startTime < callTimeout) {
+        // Refresh call from database
+        call = await Call.findById(call._id);
+
+        // Check if call has completed
+        if (call.status === "COMPLETED" || call.status === "FAILED" || call.status === "MISSED") {
+          callCompleted = true;
+          break;
+        }
+
+        // Wait 1 second before checking again
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      // If call didn't complete within timeout, mark as failed
+      if (!callCompleted) {
+        console.warn(`   ⏱️ Call timeout for lead ${leadId}. Marking as no-answer.`);
+        call.status = "NO_ANSWER";
+        call.endedAt = new Date();
+        call.durationSeconds = Math.floor((call.endedAt - call.createdAt) / 1000);
+        await call.save();
+
+        await CallLog.create({
+          callId: call._id,
+          campaignId,
+          userId,
+          leadId,
+          event: "NO_ANSWER",
+          details: "Call timeout - no answer after 2 minutes",
+          callStatus: call.status,
+          durationSeconds: call.durationSeconds
+        });
+
+        campaign.noAnswerCalls += 1;
+      }
+
+      // Update campaign stats based on final call status
+      if (call.status === "COMPLETED" && call.durationSeconds > 0) {
+        campaign.successfulCalls += 1;
+        campaign.totalDuration += call.durationSeconds;
+      } else if (call.status === "FAILED") {
+        campaign.failedCalls += 1;
+      } else if (call.status === "MISSED" || call.status === "NO_ANSWER") {
+        campaign.missedCalls += 1;
+      }
+
+      await campaign.save();
+
+      // Emit call update
+      io.emit("call:updated", {
+        callId: call._id.toString(),
+        leadName: lead.firstName,
+        status: call.status,
+        duration: call.durationSeconds,
+        campaignId: campaignId.toString()
+      });
+
+      // AI processing (non-blocking)
+      if (!call.aiProcessed && call.status === "COMPLETED") {
+        processCallAI(call._id).catch(err =>
+          console.error(`❌ AI processing failed for call ${call._id}:`, err.message)
         );
       }
 
-      // Emit call completed
-      io.emit("call:completed", {
-        userId: userId.toString(),
-        call: {
-          id: call._id,
-          leadId: call.leadId,
-          leadName: call.leadName,
-          phoneNumber: call.phoneNumber,
-          status: call.status,
-          durationSeconds: call.durationSeconds,
-          startedAt: call.createdAt,
-          endedAt: call.endedAt,
-        },
-      });
+      // Usage tracking
+      if (call.durationSeconds > 0) {
+        const minutes = Math.ceil(call.durationSeconds / 60);
+        const month = getMonthKey();
+        await Usage.findOneAndUpdate(
+          { userId, month },
+          { $inc: { voiceMinutesUsed: minutes, callsCount: 1 } },
+          { upsert: true }
+        );
+      }
+
+      // Trigger webhook event
+      await webhookEmitter.onCallCompleted(userId, call.toObject()).catch(err =>
+        console.error("❌ Webhook error:", err.message)
+      );
+
+      // Log completion
+      console.log(`   ✅ ${lead.firstName} - ${call.status} (${call.durationSeconds || 0}s)`);
+
+      // Success - exit retry loop
+      return;
+
+    } catch (err) {
+      retryCount += 1;
+      console.error(`   ❌ Call attempt ${retryCount}/${maxRetries} failed: ${err.message}`);
+
+      if (call) {
+        call.status = "FAILED";
+        await call.save();
+
+        await CallLog.create({
+          callId: call._id,
+          campaignId,
+          userId,
+          leadId,
+          event: "FAILED",
+          details: `Call failed: ${err.message}`,
+          callStatus: call.status
+        });
+
+        campaign.failedCalls += 1;
+        await campaign.save();
+      }
+
+      if (retryCount >= maxRetries) {
+        console.error(`   ⛔ Max retries exceeded for lead ${leadId}`);
+        return;
+      }
+
+      // Wait 2 seconds before retry
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+/**
+ * Pause Campaign
+ */
+export const pauseCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const userId = req.user._id;
+
+    const campaign = await Campaign.findOne({ _id: campaignId, userId });
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
     }
 
-    // Campaign complete
-    activeCampaigns.set(userId.toString(), { active: false, current: 0, total: 0 });
-    io.emit("campaign:completed", { userId: userId.toString() });
+    if (campaign.status !== "RUNNING") {
+      return res.status(400).json({ error: "Campaign is not running" });
+    }
+
+    // Mark campaign as paused
+    const activeCampaign = activeCampaigns.get(campaignId);
+    if (activeCampaign) {
+      activeCampaign.paused = true;
+    }
+
+    campaign.status = "PAUSED";
+    campaign.pausedAt = new Date();
+    await campaign.save();
+
+    io.emit("campaign:paused", {
+      userId: userId.toString(),
+      campaignId: campaignId
+    });
+
+    res.json({ success: true, campaign });
   } catch (err) {
-    console.error("❌ Campaign error:", err);
+    console.error("❌ Pause campaign error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Resume Campaign
+ */
+export const resumeCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const userId = req.user._id;
+
+    const campaign = await Campaign.findOne({ _id: campaignId, userId });
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    if (campaign.status !== "PAUSED") {
+      return res.status(400).json({ error: "Campaign is not paused" });
+    }
+
+    campaign.status = "RUNNING";
+    campaign.pausedAt = null;
+    await campaign.save();
+
+    // Mark as active
+    activeCampaigns.set(campaignId, {
+      active: true,
+      paused: false
+    });
+
+    // Resume processing from where it left off
+    const remainingLeads = campaign.leads.slice(campaign.currentBatchIndex);
+    if (remainingLeads.length > 0) {
+      processCampaignBatches(
+        campaign._id,
+        remainingLeads,
+        campaign.agentId,
+        userId
+      );
+    }
+
+    io.emit("campaign:resumed", {
+      userId: userId.toString(),
+      campaignId: campaignId
+    });
+
+    res.json({ success: true, campaign });
+  } catch (err) {
+    console.error("❌ Resume campaign error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -182,13 +495,131 @@ export const startCampaign = async (req, res) => {
  * Stop Campaign
  */
 export const stopCampaign = async (req, res) => {
-  const userId = req.user._id.toString();
+  try {
+    const { campaignId } = req.params;
+    const userId = req.user._id;
 
-  if (activeCampaigns.has(userId)) {
-    activeCampaigns.set(userId, { active: false, current: 0, total: 0 });
+    const campaign = await Campaign.findOne({ _id: campaignId, userId });
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    // Mark campaign as inactive
+    activeCampaigns.delete(campaignId);
+
+    campaign.status = "COMPLETED";
+    campaign.completedAt = new Date();
+    await campaign.save();
+
+    io.emit("campaign:stopped", {
+      userId: userId.toString(),
+      campaignId: campaignId
+    });
+
+    res.json({ success: true, message: "Campaign stopped" });
+  } catch (err) {
+    console.error("❌ Stop campaign error:", err);
+    res.status(500).json({ error: err.message });
   }
+};
 
-  res.json({ success: true, message: "Campaign stopped" });
+/**
+ * Get Campaign Details
+ */
+export const getCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const userId = req.user._id;
+
+    const campaign = await Campaign.findOne({ _id: campaignId, userId })
+      .populate('agentId', 'name')
+      .lean();
+
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    // Add calculated fields
+    campaign.successRate = campaign.completedLeads > 0
+      ? Math.round((campaign.successfulCalls / campaign.completedLeads) * 100)
+      : 0;
+
+    campaign.elapsedSeconds = campaign.startedAt
+      ? Math.floor((new Date() - campaign.startedAt) / 1000)
+      : 0;
+
+    res.json(campaign);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Get Campaign Logs
+ */
+export const getCampaignLogs = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { limit = 50, skip = 0 } = req.query;
+    const userId = req.user._id;
+
+    // Verify campaign ownership
+    const campaign = await Campaign.findOne({ _id: campaignId, userId });
+    if (!campaign) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    // Get call logs
+    const logs = await CallLog.find({ campaignId })
+      .sort({ timestamp: -1 })
+      .limit(parseInt(limit))
+      .skip(parseInt(skip))
+      .lean();
+
+    const total = await CallLog.countDocuments({ campaignId });
+
+    res.json({
+      logs,
+      total,
+      limit: parseInt(limit),
+      skip: parseInt(skip)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * List Campaigns
+ */
+export const listCampaigns = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { status = null } = req.query;
+
+    const query = { userId };
+    if (status) query.status = status;
+
+    const campaigns = await Campaign.find(query)
+      .sort({ createdAt: -1 })
+      .populate('agentId', 'name')
+      .lean();
+
+    // Add calculated fields
+    const formatted = campaigns.map(c => ({
+      ...c,
+      successRate: c.completedLeads > 0
+        ? Math.round((c.successfulCalls / c.completedLeads) * 100)
+        : 0,
+      elapsedSeconds: c.startedAt
+        ? Math.floor((new Date() - c.startedAt) / 1000)
+        : 0
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
