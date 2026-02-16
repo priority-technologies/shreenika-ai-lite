@@ -228,13 +228,19 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
     try {
       if (!audioContextRef.current) return;
 
-      // Decode audio data
-      const audioData = Buffer.from(base64Audio, 'base64');
+      // Decode base64 audio to bytes (browser-compatible, no Buffer)
+      const binaryString = atob(base64Audio);
+      const audioData = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        audioData[i] = binaryString.charCodeAt(i);
+      }
 
       // Convert PCM16 to Float32
       const float32Array = new Float32Array(audioData.length / 2);
+      const dataView = new DataView(audioData.buffer, audioData.byteOffset);
       for (let i = 0; i < audioData.length / 2; i++) {
-        const sample = audioData.readInt16LE(i * 2);
+        // Read 16-bit signed integer in little-endian format
+        const sample = dataView.getInt16(i * 2, true);
         float32Array[i] = sample / 32768.0;
       }
 
