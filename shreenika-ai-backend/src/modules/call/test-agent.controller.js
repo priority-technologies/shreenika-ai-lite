@@ -44,12 +44,33 @@ export const startTestAgent = async (req, res) => {
     const baseUrl = process.env.PUBLIC_BASE_URL || 'http://localhost:3000';
     const wsUrl = `${baseUrl.replace('https://', 'wss://').replace('http://', 'ws://')}/test-agent/${sessionId}`;
 
+    // Calculate 40-60 voice configuration ratio
+    // 40%: Characteristics (traits) and Emotions
+    // 60%: Speech Settings (voiceSpeed, responsiveness, interruptionSensitivity, backgroundNoise)
+    const voiceConfig = {
+      characteristics40: {
+        traits: agent.characteristics || [],
+        emotions: agent.speechSettings?.emotions || 0.5,
+        weight: 0.4
+      },
+      speechSettings60: {
+        voiceSpeed: agent.speechSettings?.voiceSpeed || 1.0,
+        responsiveness: agent.speechSettings?.responsiveness || 0.5,
+        interruptionSensitivity: agent.speechSettings?.interruptionSensitivity || 0.5,
+        backgroundNoise: agent.speechSettings?.backgroundNoise || 'office',
+        weight: 0.6
+      }
+    };
+
     // Store session metadata with expiry
     const maxDurationMs = 5 * 60 * 1000; // 5 minutes
     testAgentSessions.set(sessionId, {
       agentId: agent._id.toString(),
       userId: userId.toString(),
       agentName: agent.name,
+      rolePrompt: agent.prompt,
+      welcomeMessage: agent.welcomeMessage,
+      voiceConfig: voiceConfig,
       startedAt: Date.now(),
       maxDuration: maxDurationMs,
       // Auto-cleanup after expiry + 1 minute buffer
@@ -73,7 +94,10 @@ export const startTestAgent = async (req, res) => {
         id: agent._id,
         name: agent.name,
         voice: agent.voiceProfile?.displayName || 'Default Voice'
-      }
+      },
+      rolePrompt: agent.prompt,
+      welcomeMessage: agent.welcomeMessage,
+      voiceConfig: voiceConfig
     });
   } catch (error) {
     console.error('❌ Test Agent: Start failed:', error.message);

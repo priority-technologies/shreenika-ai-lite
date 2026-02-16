@@ -265,7 +265,8 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
     if (sessionIdRef.current) {
       try {
         const token = localStorage.getItem('token');
-        await fetch(`/api/test-agent/${sessionIdRef.current}/end`, {
+        const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+        await fetch(`${apiBase}/api/test-agent/${sessionIdRef.current}/end`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`
@@ -361,7 +362,7 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
           {status === 'connected' && (
             <>
               {/* Audio Waveform with Logo */}
-              <div className="relative h-32 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl flex items-center justify-center overflow-hidden">
+              <div className="relative h-40 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl flex items-center justify-center overflow-hidden">
                 {/* Waveform Bars */}
                 <div className="absolute inset-0 flex items-center justify-center space-x-1 px-4">
                   {Array.from({ length: 40 }).map((_, i) => (
@@ -376,11 +377,14 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
                   ))}
                 </div>
 
-                {/* Logo in Center */}
-                <div className="relative z-10 bg-white rounded-full p-3 shadow-lg">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
-                    <Mic className="w-6 h-6 text-white" />
+                {/* Logo and Company Name in Center */}
+                <div className="relative z-10 flex flex-col items-center gap-2">
+                  <div className="bg-white rounded-full p-3 shadow-lg">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-full flex items-center justify-center">
+                      <Mic className="w-6 h-6 text-white" />
+                    </div>
                   </div>
+                  <p className="text-xs font-semibold text-slate-700 text-center">Priority Technologies Inc.</p>
                 </div>
               </div>
 

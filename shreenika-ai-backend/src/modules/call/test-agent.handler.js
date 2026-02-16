@@ -35,15 +35,33 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
     console.log(`✅ Test Agent: Agent loaded - ${agent.name}`);
 
-    // Create VoiceService WITHOUT knowledge base (test mode)
-    // Knowledge base is a premium feature - not available for testing
-    voiceService = new VoiceService(
-      sessionId,
-      agent,
-      [], // Empty knowledge docs array for test mode
-      session.userId,
-      true // isTestMode = true
-    );
+    // Apply voice configuration from session (40-60 ratio)
+    if (session.voiceConfig) {
+      agent.speechSettings = {
+        ...agent.speechSettings,
+        voiceSpeed: session.voiceConfig.speechSettings60.voiceSpeed,
+        responsiveness: session.voiceConfig.speechSettings60.responsiveness,
+        interruptionSensitivity: session.voiceConfig.speechSettings60.interruptionSensitivity,
+        emotions: session.voiceConfig.characteristics40.emotions,
+        backgroundNoise: session.voiceConfig.speechSettings60.backgroundNoise
+      };
+
+      agent.characteristics = session.voiceConfig.characteristics40.traits;
+
+      console.log(`🎨 Test Agent: Voice config applied (40-60 ratio)`);
+      console.log(`   ├─ Characteristics (40%): ${agent.characteristics.join(', ') || 'none'}`);
+      console.log(`   └─ Speech Settings (60%): Speed=${agent.speechSettings.voiceSpeed}, Emotions=${agent.speechSettings.emotions}`);
+    }
+
+    // Apply role prompt from session (NO knowledge base in test mode)
+    if (session.rolePrompt) {
+      agent.prompt = session.rolePrompt;
+      console.log(`📋 Test Agent: Role prompt set from agent config`);
+    }
+
+    // Create VoiceService
+    // Note: VoiceService will ignore knowledge docs in test mode (empty array passed)
+    voiceService = new VoiceService(sessionId, session.agentId);
 
     console.log(`🎙️  Test Agent: Initializing voice service...`);
     await voiceService.initialize();
