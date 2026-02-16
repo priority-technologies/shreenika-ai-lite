@@ -7,6 +7,13 @@ interface TestAgentModalProps {
   onClose: () => void;
 }
 
+interface LatencyMetrics {
+  wsOpenTime: number;
+  firstAudioTime: number | null;
+  lastAudioTime: number | null;
+  audioChunksReceived: number;
+}
+
 export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentName, onClose }) => {
   const [status, setStatus] = useState<'checking-permissions' | 'connecting' | 'connected' | 'error'>('checking-permissions');
   const [error, setError] = useState<string | null>(null);
@@ -19,6 +26,19 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
   const sessionIdRef = useRef<string | null>(null);
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+
+  // Audio streaming buffers for low-latency playback
+  const audioQueueRef = useRef<Float32Array[]>([]);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const isPlayingRef = useRef<boolean>(false);
+
+  // Latency tracking
+  const metricsRef = useRef<LatencyMetrics>({
+    wsOpenTime: 0,
+    firstAudioTime: null,
+    lastAudioTime: null,
+    audioChunksReceived: 0
+  });
 
   useEffect(() => {
     initializeTestAgent();
@@ -83,6 +103,7 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
 
       ws.onopen = () => {
         console.log('✅ Test Agent: WebSocket connected');
+        metricsRef.current.wsOpenTime = Date.now();
         setStatus('connected');
         startElapsedTimer();
 
@@ -95,10 +116,26 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
           const message = JSON.parse(event.data);
 
           if (message.type === 'AUDIO') {
-            // Play audio from Gemini
+            // Track latency metrics
+            const now = Date.now();
+            if (!metricsRef.current.firstAudioTime) {
+              metricsRef.current.firstAudioTime = now;
+              const latency = now - metricsRef.current.wsOpenTime;
+              console.log(`⏱️  Test Agent: First audio arrived in ${latency}ms`);
+            }
+            metricsRef.current.lastAudioTime = now;
+            metricsRef.current.audioChunksReceived++;
+
+            // Play audio from Gemini (streaming)
             playAudio(message.audio, message.sampleRate);
           } else if (message.type === 'MAX_DURATION_REACHED') {
             console.log('⏰ Test Agent: Max duration reached');
+            if (metricsRef.current.firstAudioTime) {
+              console.log(`📊 Test Agent Latency Summary:`);
+              console.log(`   ├─ First Response: ${metricsRef.current.firstAudioTime - metricsRef.current.wsOpenTime}ms`);
+              console.log(`   ├─ Total Audio Chunks: ${metricsRef.current.audioChunksReceived}`);
+              console.log(`   └─ Duration: ${metricsRef.current.lastAudioTime ? metricsRef.current.lastAudioTime - metricsRef.current.firstAudioTime : 0}ms`);
+            }
             handleEndCall();
           } else if (message.type === 'ERROR') {
             console.error('❌ Test Agent Error:', message.message);
@@ -191,22 +228,66 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
     try {
       if (!audioContextRef.current) return;
 
+      // Decode audio data
       const audioData = Buffer.from(base64Audio, 'base64');
-      const audioBuffer = audioContextRef.current.createBuffer(1, audioData.length / 2, sampleRate);
-      const channelData = audioBuffer.getChannelData(0);
 
       // Convert PCM16 to Float32
+      const float32Array = new Float32Array(audioData.length / 2);
       for (let i = 0; i < audioData.length / 2; i++) {
         const sample = audioData.readInt16LE(i * 2);
-        channelData[i] = sample / 32768.0;
+        float32Array[i] = sample / 32768.0;
       }
 
+      // Queue audio for streaming playback
+      audioQueueRef.current.push(float32Array);
+
+      // Start playback if not already playing
+      if (!isPlayingRef.current) {
+        playQueuedAudio();
+      }
+    } catch (error) {
+      console.error('❌ Test Agent: Error queuing audio:', error);
+    }
+  };
+
+  const playQueuedAudio = () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    try {
+      if (!audioContextRef.current) return;
+
+      isPlayingRef.current = true;
+      const chunk = audioQueueRef.current.shift();
+      if (!chunk) {
+        isPlayingRef.current = false;
+        return;
+      }
+
+      // Create audio buffer for this chunk
+      const audioBuffer = audioContextRef.current.createBuffer(1, chunk.length, 48000);
+      const channelData = audioBuffer.getChannelData(0);
+      channelData.set(chunk);
+
+      // Create and start source
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.connect(audioContextRef.current.destination);
-      source.start();
+
+      // Play next chunk when this one finishes
+      source.onended = () => {
+        isPlayingRef.current = false;
+        if (audioQueueRef.current.length > 0) {
+          playQueuedAudio();
+        }
+      };
+
+      source.start(0);
+      currentSourceRef.current = source;
     } catch (error) {
-      console.error('❌ Test Agent: Error playing audio:', error);
+      console.error('❌ Test Agent: Error playing queued audio:', error);
+      isPlayingRef.current = false;
     }
   };
 
@@ -283,6 +364,20 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
 
   const cleanup = () => {
     console.log('🧹 Test Agent: Cleanup');
+
+    // Stop current audio playback
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop();
+        currentSourceRef.current = null;
+      } catch (error) {
+        console.error('Error stopping audio source:', error);
+      }
+    }
+
+    // Clear audio queue
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
 
     if (audioProcessorRef.current) {
       try {
