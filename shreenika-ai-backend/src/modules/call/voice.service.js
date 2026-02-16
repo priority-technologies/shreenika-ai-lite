@@ -24,11 +24,12 @@ import { io } from '../../server.js';
  * Manages a single voice conversation session
  */
 export class VoiceService extends EventEmitter {
-  constructor(callId, agentId) {
+  constructor(callId, agentId, isTestMode = false) {
     super();
 
     this.callId = callId;
     this.agentId = agentId;
+    this.isTestMode = isTestMode;
 
     this.agent = null;
     this.call = null;
@@ -59,10 +60,14 @@ export class VoiceService extends EventEmitter {
         throw new Error(`Agent not found: ${this.agentId}`);
       }
 
-      // Load call document
-      this.call = await Call.findById(this.callId);
-      if (!this.call) {
-        throw new Error(`Call not found: ${this.callId}`);
+      // Load call document (skip for test mode)
+      if (!this.isTestMode) {
+        this.call = await Call.findById(this.callId);
+        if (!this.call) {
+          throw new Error(`Call not found: ${this.callId}`);
+        }
+      } else {
+        console.log(`🧪 Test Mode: Skipping Call document load`);
       }
 
       console.log(`📋 Agent loaded: ${this.agent.name}`);

@@ -59,11 +59,11 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
       console.log(`📋 Test Agent: Role prompt set from agent config`);
     }
 
-    // Create VoiceService
-    // Note: VoiceService will ignore knowledge docs in test mode (empty array passed)
-    voiceService = new VoiceService(sessionId, session.agentId);
+    // Create VoiceService in test mode
+    // isTestMode = true: skips Call document lookup
+    voiceService = new VoiceService(sessionId, session.agentId, true);
 
-    console.log(`🎙️  Test Agent: Initializing voice service...`);
+    console.log(`🎙️  Test Agent: Initializing voice service (test mode)...`);
     await voiceService.initialize();
     console.log(`✅ Test Agent: Voice service ready`);
 
