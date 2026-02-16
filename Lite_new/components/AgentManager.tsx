@@ -3,6 +3,7 @@ import { AgentConfig, Subscription } from '../types';
 import { improveAgentPrompt } from '../services/geminiService';
 import { LANGUAGE_OPTIONS, NOISE_OPTIONS, CHARACTERISTIC_OPTIONS } from '../constants';
 import { getAgents, getAgentById, createAgent, updateAgent, deleteAgent, getBillingStatus, getVoices, uploadKnowledgeFile, deleteKnowledgeDoc } from '../services/api';
+import { TestAgentModal } from './TestAgentModal';
 import {
   Save,
   Upload,
@@ -16,7 +17,8 @@ import {
   Loader2,
   Plus,
   UserPlus,
-  Lock
+  Lock,
+  Headphones
 } from 'lucide-react';
 
 
@@ -57,6 +59,9 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
   const [isGoogleOpen, setIsGoogleOpen] = useState(false);
   const [googleInstruction, setGoogleInstruction] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Test Agent State
+  const [isTestAgentOpen, setIsTestAgentOpen] = useState(false);
 
   // Save State
   const [isSaving, setIsSaving] = useState(false);
@@ -553,8 +558,19 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
            </div>
            
            <div className="flex items-center space-x-3">
+              {/* TEST AGENT BUTTON */}
+              <button
+                 onClick={() => setIsTestAgentOpen(true)}
+                 disabled={!localAgent.id}
+                 className="flex items-center space-x-2 bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 px-3 py-2 rounded-lg text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                 title="Test agent voice with microphone"
+              >
+                 <Headphones className="w-4 h-4" />
+                 <span className="hidden sm:inline">Test Agent</span>
+              </button>
+
               {/* ADD AGENT BUTTON - Explicitly Styled & Visible */}
-              <button 
+              <button
                  onClick={handleAddAgent}
                  disabled={isLoadingAgents}
                  className="flex items-center space-x-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 px-3 py-2 rounded-lg text-sm font-bold transition-all mr-2 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1095,6 +1111,15 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                  </button>
               </div>
            </div>
+        )}
+
+        {/* Test Agent Modal */}
+        {isTestAgentOpen && (
+          <TestAgentModal
+            agentId={localAgent.id || ''}
+            agentName={localAgent.name}
+            onClose={() => setIsTestAgentOpen(false)}
+          />
         )}
 
       </div>
