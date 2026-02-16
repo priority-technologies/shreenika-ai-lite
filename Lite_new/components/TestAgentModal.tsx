@@ -193,7 +193,7 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
           const pcmData = convertFloat32ToPCM16(inputData);
           wsRef.current.send(JSON.stringify({
             type: 'AUDIO',
-            audio: pcmData.toString('base64'),
+            audio: uint8ArrayToBase64(pcmData),
             sampleRate: 48000
           }));
         }
@@ -314,41 +314,8 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
   const handleEndCall = async () => {
     console.log('🛑 Test Agent: Ending call');
 
-    // Close WebSocket
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-
-    // Stop audio capture
-    if (audioProcessorRef.current) {
-      try {
-        audioProcessorRef.current.disconnect();
-      } catch (error) {
-        console.error('Error disconnecting audio processor:', error);
-      }
-    }
-
-    // Stop media stream
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => {
-        try {
-          track.stop();
-        } catch (error) {
-          console.error('Error stopping media track:', error);
-        }
-      });
-    }
-
-    // Stop audio
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try {
-        await audioContextRef.current.close();
-      } catch (error) {
-        console.error('Error closing audio context:', error);
-      }
-    }
-
-    // Notify backend
+    // Step 1: Notify backend FIRST (before closing WebSocket)
+    // WebSocket close triggers session cleanup on backend, so POST must happen first
     if (sessionIdRef.current) {
       try {
         const token = localStorage.getItem('token');
@@ -363,6 +330,40 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       } catch (error) {
         console.error('Error notifying backend of session end:', error);
       }
+    }
+
+    // Step 2: Stop audio capture
+    if (audioProcessorRef.current) {
+      try {
+        audioProcessorRef.current.disconnect();
+      } catch (error) {
+        console.error('Error disconnecting audio processor:', error);
+      }
+    }
+
+    // Step 3: Stop media stream
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (error) {
+          console.error('Error stopping media track:', error);
+        }
+      });
+    }
+
+    // Step 4: Close audio context
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        await audioContextRef.current.close();
+      } catch (error) {
+        console.error('Error closing audio context:', error);
+      }
+    }
+
+    // Step 5: Close WebSocket LAST (triggers backend session cleanup)
+    if (wsRef.current) {
+      wsRef.current.close();
     }
 
     onClose();
@@ -420,13 +421,22 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
     }
   };
 
-  const convertFloat32ToPCM16 = (float32Array: Float32Array): Buffer => {
-    const buffer = Buffer.alloc(float32Array.length * 2);
+  const convertFloat32ToPCM16 = (float32Array: Float32Array): Uint8Array => {
+    const buffer = new ArrayBuffer(float32Array.length * 2);
+    const view = new DataView(buffer);
     for (let i = 0; i < float32Array.length; i++) {
       const sample = Math.max(-1, Math.min(1, float32Array[i]));
-      buffer.writeInt16LE(sample * 32767, i * 2);
+      view.setInt16(i * 2, sample * 32767, true); // true = little-endian
     }
-    return buffer;
+    return new Uint8Array(buffer);
+  };
+
+  const uint8ArrayToBase64 = (bytes: Uint8Array): string => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
   };
 
   return (
