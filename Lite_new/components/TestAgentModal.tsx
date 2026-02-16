@@ -55,7 +55,8 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       console.log('📡 Test Agent: Starting backend session');
 
       const token = localStorage.getItem('token');
-      const response = await fetch('/api/test-agent/start', {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+      const response = await fetch(`${apiBase}/api/test-agent/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
