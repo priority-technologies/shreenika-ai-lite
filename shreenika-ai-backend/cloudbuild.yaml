@@ -26,7 +26,7 @@ steps:
       - '--region=asia-south1'
       - '--platform=managed'
       - '--no-allow-unauthenticated'
-      - '--set-env-vars=VOIP_ENCRYPTION_KEY=default_key_32_bytes_long_123456'
+      - '--update-env-vars=VOIP_ENCRYPTION_KEY=default_key_32_bytes_long_123456'
 
 images:
   - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:$COMMIT_SHA'
