@@ -188,6 +188,11 @@ export class VoiceService extends EventEmitter {
    */
   sendAudio(pcmBuffer) {
     if (!this.isReady || this.isClosed) {
+      if (this._audioDropCount === undefined) this._audioDropCount = 0;
+      this._audioDropCount++;
+      if (this._audioDropCount <= 3 || this._audioDropCount % 50 === 0) {
+        console.warn(`⚠️ VoiceService: Audio dropped - isReady=${this.isReady}, isClosed=${this.isClosed} (dropped ${this._audioDropCount} chunks)`);
+      }
       return;
     }
 

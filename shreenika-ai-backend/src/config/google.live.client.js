@@ -198,19 +198,22 @@ export class GeminiLiveSession extends EventEmitter {
 
   /**
    * Connect to Gemini Live API
+   * Waits for BOTH WebSocket open AND Gemini setupComplete before resolving
    * @returns {Promise<void>}
    */
   async connect() {
     return new Promise((resolve, reject) => {
+      let resolved = false;
       const url = `${GEMINI_LIVE_ENDPOINT}?key=${this.apiKey}`;
 
+      console.log(`🔌 Gemini Live: Connecting to model=${this.model}, voice=${this.voice}`);
       this.ws = new WebSocket(url);
 
       this.ws.on('open', () => {
-        console.log('🔌 Gemini Live WebSocket connected');
+        console.log('🔌 Gemini Live: WebSocket opened, sending setup...');
         this.isConnected = true;
         this._sendSetup();
-        resolve();
+        // Do NOT resolve yet - wait for setupComplete
       });
 
       this.ws.on('message', (data) => {
@@ -218,23 +221,44 @@ export class GeminiLiveSession extends EventEmitter {
       });
 
       this.ws.on('error', (error) => {
-        console.error('❌ Gemini Live WebSocket error:', error.message);
+        console.error('❌ Gemini Live: WebSocket error:', error.message);
         this.emit('error', error);
-        reject(error);
+        if (!resolved) {
+          resolved = true;
+          reject(error);
+        }
       });
 
       this.ws.on('close', (code, reason) => {
-        console.log(`🔌 Gemini Live WebSocket closed: ${code} ${reason}`);
+        const reasonStr = reason ? reason.toString() : 'unknown';
+        console.log(`🔌 Gemini Live: WebSocket closed: code=${code} reason=${reasonStr}`);
         this.isConnected = false;
-        this.emit('close', { code, reason: reason.toString() });
+        this.emit('close', { code, reason: reasonStr });
+        if (!resolved) {
+          resolved = true;
+          reject(new Error(`Gemini Live connection closed before ready: code=${code} reason=${reasonStr}`));
+        }
       });
 
-      // Connection timeout
-      setTimeout(() => {
-        if (!this.isConnected) {
-          reject(new Error('Gemini Live connection timeout'));
+      // Resolve when Gemini confirms session is ready (setupComplete received)
+      this.on('ready', () => {
+        if (!resolved) {
+          resolved = true;
+          console.log('✅ Gemini Live: Session fully ready, resolving connect()');
+          resolve();
         }
-      }, 10000);
+      });
+
+      // Connection + setup timeout (15 seconds)
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          const err = new Error('Gemini Live: Timeout waiting for session setup (15s). Check GOOGLE_API_KEY and model availability.');
+          console.error(`❌ ${err.message}`);
+          this.close();
+          reject(err);
+        }
+      }, 15000);
     });
   }
 
@@ -335,7 +359,11 @@ export class GeminiLiveSession extends EventEmitter {
    */
   sendAudio(pcmBuffer) {
     if (!this.isConnected) {
-      console.warn('⚠️ Cannot send audio: not connected');
+      if (this._audioDropCount === undefined) this._audioDropCount = 0;
+      this._audioDropCount++;
+      if (this._audioDropCount <= 3 || this._audioDropCount % 50 === 0) {
+        console.warn(`⚠️ Gemini Live: Cannot send audio - not connected (dropped ${this._audioDropCount} chunks)`);
+      }
       return;
     }
 

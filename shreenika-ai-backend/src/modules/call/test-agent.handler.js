@@ -64,9 +64,22 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
     // voiceConfig: Applied voice customization (40-60 ratio)
     voiceService = new VoiceService(sessionId, session.agentId, true, session.voiceConfig);
 
+    // Attach error handler BEFORE initialize so setup errors aren't lost
+    voiceService.on('error', (error) => {
+      console.error('❌ Test Agent: Voice service error:', error.message || error);
+      try {
+        ws.send(JSON.stringify({
+          type: 'ERROR',
+          message: error.message || 'Voice service error'
+        }));
+      } catch (sendError) {
+        console.error('Error sending error message:', sendError);
+      }
+    });
+
     console.log(`🎙️  Test Agent: Initializing voice service (test mode with voice customization)...`);
     await voiceService.initialize();
-    console.log(`✅ Test Agent: Voice service ready with 40-60 voice ratio applied`);
+    console.log(`✅ Test Agent: Voice service ready - Gemini Live session confirmed active`);
 
     // Auto-disconnect after max duration
     maxDurationTimer = setTimeout(() => {
@@ -80,6 +93,7 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
     }, session.maxDuration);
 
     // Handle incoming audio from browser
+    let audioChunksSentToGemini = 0;
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data);
@@ -92,9 +106,13 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
           // Resample from browser format (48kHz) to Gemini format (16kHz)
           const geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
 
-          // Send to Gemini Live
-          if (voiceService && voiceService.isReady) {
-            await voiceService.sendAudio(geminiAudio);
+          // Send to Gemini Live (VoiceService logs if audio is dropped)
+          if (voiceService) {
+            voiceService.sendAudio(geminiAudio);
+            audioChunksSentToGemini++;
+            if (audioChunksSentToGemini === 1) {
+              console.log(`🎤 Test Agent: First audio chunk sent to VoiceService (${geminiAudio.length} bytes)`);
+            }
           }
         } else if (message.type === 'PING') {
           // Keep-alive ping
@@ -136,18 +154,7 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
         // NOT sent to frontend per requirements
       });
 
-      // Handle errors from voice service
-      voiceService.on('error', (error) => {
-        console.error('❌ Test Agent: Voice service error:', error);
-        try {
-          ws.send(JSON.stringify({
-            type: 'ERROR',
-            message: error.message || 'Voice service error'
-          }));
-        } catch (sendError) {
-          console.error('Error sending error message:', sendError);
-        }
-      });
+      // Note: error handler already attached before initialize()
     }
 
     // Handle WebSocket connection errors
@@ -166,7 +173,7 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
       if (voiceService) {
         try {
-          voiceService.cleanup();
+          voiceService.close();
         } catch (error) {
           console.error('Error during voice service cleanup:', error);
         }
@@ -194,7 +201,7 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
     if (voiceService) {
       try {
-        voiceService.cleanup();
+        voiceService.close();
       } catch (cleanupError) {
         console.error('Error during cleanup:', cleanupError);
       }
