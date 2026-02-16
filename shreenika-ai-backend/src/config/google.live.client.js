@@ -51,25 +51,50 @@ export const mapAgentVoiceToGemini = (agentVoiceId) => {
  * Build system instruction from agent configuration
  * @param {Object} agent - Agent document from MongoDB
  * @param {Array} knowledgeDocs - Knowledge documents fetched from DB (optional)
+ * @param {Object} voiceConfig - Voice customization config (optional)
  * @returns {string} - System instruction for Gemini
  */
-export const buildSystemInstruction = (agent, knowledgeDocs = []) => {
+export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = null) => {
   const parts = [];
 
   // Agent identity
   parts.push(`You are ${agent.name}, a ${agent.title || 'voice assistant'}.`);
 
-  // Personality characteristics
-  if (agent.characteristics && agent.characteristics.length > 0) {
-    parts.push(`Your personality traits are: ${agent.characteristics.join(', ')}.`);
+  // ===== VOICE CUSTOMIZATION (40-60 RATIO) =====
+  // 40% = Characteristics + Emotions
+  // 60% = Speech Settings (voiceSpeed, responsiveness)
+
+  // Personality characteristics (40% weight)
+  const characteristics = voiceConfig?.characteristics40?.traits || agent.characteristics || [];
+  if (characteristics.length > 0) {
+    parts.push(`Your personality traits are: ${characteristics.join(', ')}.`);
   }
 
-  // Speaking style based on emotion level
-  if (agent.emotionLevel) {
-    if (agent.emotionLevel > 0.7) {
-      parts.push('Speak with warmth and enthusiasm. Be expressive and engaging.');
-    } else if (agent.emotionLevel < 0.3) {
-      parts.push('Speak in a calm, professional manner. Be concise and direct.');
+  // Emotion level from voiceConfig or agent settings (40% weight)
+  const emotionLevel = voiceConfig?.characteristics40?.emotions ?? agent.speechSettings?.emotions ?? 0.5;
+  if (emotionLevel > 0.7) {
+    parts.push('Speak with warmth and enthusiasm. Be expressive, engaging, and energetic in your tone.');
+  } else if (emotionLevel < 0.3) {
+    parts.push('Speak in a calm, measured manner. Be thoughtful, collected, and professional in your tone.');
+  } else {
+    parts.push('Speak in a balanced, natural manner. Be conversational yet professional.');
+  }
+
+  // Speech settings instructions (60% weight)
+  if (voiceConfig?.speechSettings60) {
+    const voiceSpeed = voiceConfig.speechSettings60.voiceSpeed || 1.0;
+    const responsiveness = voiceConfig.speechSettings60.responsiveness || 0.5;
+
+    if (voiceSpeed > 1.1) {
+      parts.push('Speak quickly and energetically. Keep responses brisk and dynamic.');
+    } else if (voiceSpeed < 0.9) {
+      parts.push('Speak slowly and deliberately. Allow pauses for emphasis and clarity.');
+    }
+
+    if (responsiveness > 0.7) {
+      parts.push('Respond immediately and attentively to user input. Show quick understanding and engagement.');
+    } else if (responsiveness < 0.3) {
+      parts.push('Take thoughtful pauses before responding. Process user input carefully before answering.');
     }
   }
 
@@ -396,17 +421,18 @@ export class GeminiLiveSession extends EventEmitter {
  * Create a Gemini Live session with agent configuration
  * @param {Object} agent - Agent document from MongoDB
  * @param {Array} knowledgeDocs - Knowledge documents from DB (optional)
+ * @param {Object} voiceConfig - Voice customization config (optional)
  * @returns {GeminiLiveSession} - Configured session
  */
-export const createGeminiLiveSession = (agent, knowledgeDocs = []) => {
+export const createGeminiLiveSession = (agent, knowledgeDocs = [], voiceConfig = null) => {
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
     throw new Error('GOOGLE_API_KEY is not configured');
   }
 
-  const systemInstruction = buildSystemInstruction(agent, knowledgeDocs);
-  const voice = mapAgentVoiceToGemini(agent.voiceId);
+  const systemInstruction = buildSystemInstruction(agent, knowledgeDocs, voiceConfig);
+  const voice = mapAgentVoiceToGemini(agent.voiceProfile?.voiceId || agent.voiceId);
 
   console.log(`📋 System instruction built: ${systemInstruction.length} chars, ${knowledgeDocs.length} knowledge docs injected`);
 

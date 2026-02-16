@@ -59,13 +59,14 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
       console.log(`📋 Test Agent: Role prompt set from agent config`);
     }
 
-    // Create VoiceService in test mode
+    // Create VoiceService in test mode with voice customization
     // isTestMode = true: skips Call document lookup
-    voiceService = new VoiceService(sessionId, session.agentId, true);
+    // voiceConfig: Applied voice customization (40-60 ratio)
+    voiceService = new VoiceService(sessionId, session.agentId, true, session.voiceConfig);
 
-    console.log(`🎙️  Test Agent: Initializing voice service (test mode)...`);
+    console.log(`🎙️  Test Agent: Initializing voice service (test mode with voice customization)...`);
     await voiceService.initialize();
-    console.log(`✅ Test Agent: Voice service ready`);
+    console.log(`✅ Test Agent: Voice service ready with 40-60 voice ratio applied`);
 
     // Auto-disconnect after max duration
     maxDurationTimer = setTimeout(() => {

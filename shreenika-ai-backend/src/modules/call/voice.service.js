@@ -17,6 +17,7 @@ import Agent from '../agent/agent.model.js';
 import Call from './call.model.js';
 import Knowledge from '../knowledge/knowledge.model.js';
 import { createGeminiLiveSession } from '../../config/google.live.client.js';
+import { createVoiceCustomization } from '../voice/voice-customization.service.js';
 import { io } from '../../server.js';
 
 /**
@@ -24,16 +25,18 @@ import { io } from '../../server.js';
  * Manages a single voice conversation session
  */
 export class VoiceService extends EventEmitter {
-  constructor(callId, agentId, isTestMode = false) {
+  constructor(callId, agentId, isTestMode = false, voiceConfig = null) {
     super();
 
     this.callId = callId;
     this.agentId = agentId;
     this.isTestMode = isTestMode;
+    this.voiceConfig = voiceConfig; // Voice customization config
 
     this.agent = null;
     this.call = null;
     this.geminiSession = null;
+    this.voiceCustomization = null; // Voice customization service
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -72,6 +75,15 @@ export class VoiceService extends EventEmitter {
 
       console.log(`📋 Agent loaded: ${this.agent.name}`);
 
+      // Initialize voice customization service (40-60 ratio)
+      this.voiceCustomization = await createVoiceCustomization(this.agent, this.voiceConfig);
+      const voiceProfile = this.voiceCustomization.getAudioProfile();
+      console.log(`🎨 Voice customization initialized:`);
+      console.log(`   ├─ Characteristics: ${voiceProfile.characteristics.join(', ') || 'none'}`);
+      console.log(`   ├─ Emotion Level: ${voiceProfile.emotions.toFixed(2)}`);
+      console.log(`   ├─ Voice Speed: ${voiceProfile.voiceSpeed.toFixed(2)}x`);
+      console.log(`   └─ Background Noise: ${voiceProfile.backgroundNoise}`);
+
       // Fetch knowledge documents from DB for this agent
       let knowledgeDocs = [];
       try {
@@ -84,8 +96,8 @@ export class VoiceService extends EventEmitter {
         console.warn('⚠️ Failed to load knowledge docs:', err.message);
       }
 
-      // Create Gemini Live session with knowledge
-      this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs);
+      // Create Gemini Live session with voice customization
+      this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
 
       // Set up Gemini event handlers
       this._setupGeminiHandlers();
