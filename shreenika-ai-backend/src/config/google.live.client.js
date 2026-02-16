@@ -183,8 +183,9 @@ export class GeminiLiveSession extends EventEmitter {
     super();
 
     this.apiKey = apiKey;
-    // Try multiple model options: env var > options > fallback to gemini-2.0-flash (stable)
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash';
+    // Gemini Live API native audio model: env var > options > latest stable model
+    // Documentation: https://ai.google.dev/gemini-api/docs/live-guide
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
 
