@@ -197,15 +197,25 @@ export class SansPBXProvider extends BaseProvider {
       }
 
       // Extract call ID from response (try multiple possible field names)
-      // SansPBX may return: callid, call_id, id, Callid, or other formats
-      const callId = actualResponse.callid || actualResponse.call_id || actualResponse.id || actualResponse.Callid;
+      // SansPBX API response structure: Top-level OR nested in 'msg' object
+      // Examples:
+      // - Top level: { callid: "xxx" }
+      // - Nested: { msg: { callid: "xxx" } }
+      // - Nested: { msg: { msg: "text", callid: "xxx" } }
+      const callId =
+        actualResponse.callid ||
+        actualResponse.call_id ||
+        actualResponse.id ||
+        actualResponse.Callid ||
+        actualResponse.msg?.callid ||  // Nested in msg.callid
+        (actualResponse.msg && typeof actualResponse.msg === 'object' && actualResponse.msg.callid);
 
       // CRITICAL: Must have a real call ID from SansPBX, not a fallback/generated ID
       if (!callId) {
         console.error(`❌ SansPBX API returned 200 but no call ID. Response was:`, JSON.stringify(data, null, 2));
         throw new Error(
           `SansPBX API returned HTTP 200 but no call ID in response. ` +
-          `Response must include one of: callid, call_id, id, or Callid. ` +
+          `Checked: callid, call_id, id, Callid, and msg.callid. ` +
           `Got: ${JSON.stringify(actualResponse)}`
         );
       }
