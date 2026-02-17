@@ -120,27 +120,31 @@ export class SansPBXProvider extends BaseProvider {
       const fetch = (await import('node-fetch')).default;
 
       // Normalize phone numbers
-      // SansPBX team confirmed format requirements:
-      // - call_to: Full destination number (10 digits for India: prepend 91 if needed)
-      // - caller_id: DID format (7 digits only, no country code)
-      let normalizedTo = toPhone.replace(/[\D]/g, '');
-      let normalizedFrom = fromPhone.replace(/[\D]/g, '');
+      // SansPBX team confirmed format requirements (2026-02-17):
+      // - caller_id (fromPhone/DID): 7-digit format ONLY (e.g., 6745647)
+      //   No country codes, no prefixes, just 7 digits
+      // - call_to (toPhone): Accept as-is from controller (already cleaned)
 
-      // For call_to: Add country code if missing (for 10-digit Indian numbers)
-      if (normalizedTo.length === 10) {
-        normalizedTo = '91' + normalizedTo;
-      }
+      let normalizedFrom = fromPhone.replace(/[\D]/g, ''); // Remove all non-digits
+      let normalizedTo = toPhone.replace(/[\D]/g, ''); // Remove all non-digits
 
-      // For caller_id (DID): Extract last 7 digits per SansPBX requirements
-      // This handles cases like: +911234567890 → 4567890, or 6745647 → 6745647
+      // For caller_id (fromPhone/DID): Extract/enforce 7-digit format ONLY
+      // Examples: +911234567890 → 4567890, or 6745647 → 6745647, or 9876543210 → 6543210
       if (normalizedFrom.length > 7) {
+        console.log(`   ⚠️  SansPBX: DID is ${normalizedFrom.length} digits, extracting last 7`);
         normalizedFrom = normalizedFrom.slice(-7);
+      } else if (normalizedFrom.length < 7) {
+        console.warn(`   ⚠️  SansPBX: DID is only ${normalizedFrom.length} digits (expected 7). This may fail.`);
       }
+
+      // For call_to (toPhone): Use as cleaned by controller (digits only)
+      // Controller removed formatting chars but NOT country codes
+      // This allows flexibility: 9876543210, 6745647, 919876543210, etc.
 
       console.log(`📞 SansPBX: Initiating call`);
       console.log(`   Input - To: ${toPhone}, From: ${fromPhone}`);
-      console.log(`   Normalized - To: ${normalizedTo} (destination)`);
-      console.log(`   Normalized - From: ${normalizedFrom} (DID - 7 digits)`);
+      console.log(`   Formatted - To: ${normalizedTo} (destination - as-is from controller)`);
+      console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
       const payload = {
         appid: this.credentials.appId || 6,
@@ -192,16 +196,21 @@ export class SansPBXProvider extends BaseProvider {
         throw new Error(`API returned status: ${actualResponse.status}`);
       }
 
-      // If we have a call ID, the call was initiated
-      // SansPBX returns: callid (lowercase)
-      if (!actualResponse.call_id && !actualResponse.id && !actualResponse.Callid && !actualResponse.callid) {
-        throw new Error(`No call ID in response: ${JSON.stringify(data)}`);
+      // Extract call ID from response (try multiple possible field names)
+      // SansPBX may return: callid, call_id, id, Callid, or other formats
+      const callId = actualResponse.callid || actualResponse.call_id || actualResponse.id || actualResponse.Callid;
+
+      // CRITICAL: Must have a real call ID from SansPBX, not a fallback/generated ID
+      if (!callId) {
+        console.error(`❌ SansPBX API returned 200 but no call ID. Response was:`, JSON.stringify(data, null, 2));
+        throw new Error(
+          `SansPBX API returned HTTP 200 but no call ID in response. ` +
+          `Response must include one of: callid, call_id, id, or Callid. ` +
+          `Got: ${JSON.stringify(actualResponse)}`
+        );
       }
 
-      console.log(`✅ SansPBX: Call initiated successfully`);
-
-      // Extract call ID from response (SansPBX uses 'callid' in lowercase)
-      const callId = actualResponse.callid || actualResponse.call_id || actualResponse.id || actualResponse.Callid || `sanspbx_${Date.now()}`;
+      console.log(`✅ SansPBX: Call initiated successfully with ID: ${callId}`);
 
       return {
         callSid: callId,

@@ -28,13 +28,12 @@ export const startOutboundCall = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields: agentId and toPhone are required" });
     }
 
-    // Normalize phone to E.164 format
-    let normalizedPhone = toPhone.replace(/[\s\-\(\)\.]/g, '');
-    if (!normalizedPhone.startsWith('+')) {
-      normalizedPhone = '+1' + normalizedPhone;
-    }
+    // Clean up phone number (remove formatting characters)
+    // Provider-specific formatting happens in each provider's initiateCall()
+    // Each provider handles its own format: SansPBX (7 digits), Twilio (E.164), etc.
+    let cleanPhone = toPhone.replace(/[\s\-\(\)\.]/g, '');
 
-    console.log(`📱 Phone normalized: "${toPhone}" → "${normalizedPhone}"`);
+    console.log(`📱 Phone cleaned: "${toPhone}" → "${cleanPhone}" (provider will format based on its type)`);
 
     // Get agent's assigned VOIP provider
     console.log(`\n📱 [startOutboundCall] TRACING CALL EXECUTION FOR AGENT: ${agentId}`);
@@ -144,15 +143,32 @@ export const startOutboundCall = async (req, res) => {
     console.log(`\n📞 [startOutboundCall] INITIATING CALL`);
     console.log(`   ├─ Provider: ${voipProvider.provider}`);
     console.log(`   ├─ From: ${effectiveFromPhone}`);
-    console.log(`   ├─ To: ${normalizedPhone}`);
+    console.log(`   ├─ To: ${cleanPhone}`);
     console.log(`   └─ Calling provider.initiateCall()...\n`);
 
     const callResult = await provider.initiateCall({
-      toPhone: normalizedPhone,
+      toPhone: cleanPhone,
       fromPhone: effectiveFromPhone,
       webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
       statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
     });
+
+    // CRITICAL: Validate callResult has required fields before saving
+    if (!callResult || typeof callResult !== 'object') {
+      throw new Error(`Provider returned invalid response: ${JSON.stringify(callResult)}`);
+    }
+
+    if (!callResult.callSid) {
+      throw new Error(`Provider response missing callSid. Got: ${JSON.stringify(callResult)}`);
+    }
+
+    if (!callResult.providerCallId) {
+      throw new Error(`Provider response missing providerCallId. Got: ${JSON.stringify(callResult)}`);
+    }
+
+    if (!callResult.provider) {
+      throw new Error(`Provider response missing provider field. Got: ${JSON.stringify(callResult)}`);
+    }
 
     // Update call record with provider's call ID
     call.twilioCallSid = callResult.callSid;
