@@ -217,7 +217,8 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
 /**
  * Resample audio from one sample rate to another
- * Uses simple nearest-neighbor resampling
+ * Uses LINEAR INTERPOLATION for high-quality resampling
+ * Fixes distortion issues from nearest-neighbor approach
  *
  * @param {Buffer} audioBuffer - Input audio buffer (PCM 16-bit)
  * @param {number} fromSampleRate - Input sample rate (e.g., 48000)
@@ -225,35 +226,6 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
  * @returns {Buffer} Resampled audio buffer
  */
 function resampleAudio(audioBuffer, fromSampleRate, toSampleRate) {
-  if (fromSampleRate === toSampleRate) {
-    return audioBuffer; // No resampling needed
-  }
-
-  const ratio = toSampleRate / fromSampleRate;
-  const inputSamples = audioBuffer.length / 2; // 16-bit = 2 bytes per sample
-  const outputSamples = Math.floor(inputSamples * ratio);
-  const outputBuffer = Buffer.alloc(outputSamples * 2);
-
-  // Simple nearest-neighbor resampling
-  for (let i = 0; i < outputSamples; i++) {
-    const inputIndex = Math.floor(i / ratio);
-    const inputOffset = inputIndex * 2;
-    const outputOffset = i * 2;
-
-    // Copy 16-bit sample
-    if (inputOffset + 1 < audioBuffer.length) {
-      audioBuffer.copy(outputBuffer, outputOffset, inputOffset, inputOffset + 2);
-    }
-  }
-
-  return outputBuffer;
-}
-
-/**
- * Alternative: Linear interpolation resampling (higher quality)
- * Uncomment to use instead of nearest-neighbor
- */
-export function resampleAudioLinear(audioBuffer, fromSampleRate, toSampleRate) {
   if (fromSampleRate === toSampleRate) {
     return audioBuffer;
   }
@@ -263,7 +235,7 @@ export function resampleAudioLinear(audioBuffer, fromSampleRate, toSampleRate) {
   const outputSamples = Math.floor(inputSamples * ratio);
   const outputBuffer = Buffer.alloc(outputSamples * 2);
 
-  // Linear interpolation resampling
+  // Linear interpolation resampling (high quality, fixes distortion)
   for (let i = 0; i < outputSamples; i++) {
     const inputIndex = i / ratio;
     const inputIndexFloor = Math.floor(inputIndex);
