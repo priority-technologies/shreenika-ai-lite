@@ -10,7 +10,6 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import { calculateProsodyProfile, generateProsodyInstructions } from '../modules/voice/prosody.service.js';
-import { generateHinglishProsodyPrompt } from '../modules/voice/hinglish-prosody.service.js';
 
 const GEMINI_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
@@ -120,14 +119,14 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Mix Hindi and English words naturally in sentences (e.g., "Haan, bilkul! That\'s perfect.")');
     parts.push('- Use common Hinglish expressions: "Haan", "Nahi", "Bilkul", "Matlab", "Bhai", "Acha"');
     parts.push('- Use rising intonation for statements (not falling like English) - convey warmth and involvement');
-    parts.push('- Emphasize on first syllable of multi-syllabic words (e.g., "TINglish" not "tinGLISH")');
-    parts.push('- Use schwa deletion pattern where applicable (natural pronunciation)');
-    parts.push('- Questions have high pitch peaks around 210-230 Hz - sound curious and engaged');
+    parts.push('- Emphasize first syllable of multi-syllabic words (e.g., "COMputer" not "comPUter")');
+    parts.push('- Use natural schwa deletion pattern (natural pronunciation)');
+    parts.push('- Questions should sound curious and engaged with natural pitch variation');
     parts.push('- Use prosodic fillers naturally: "Haan...", "So...", "Matlab..." to maintain conversational flow');
     parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
 
-    // Add comprehensive Hinglish prosody guidance
-    parts.push(generateHinglishProsodyPrompt());
+    // NOTE: Comprehensive Hinglish prosody prompt REMOVED to stay under Gemini's 30K system prompt limit
+    // The short language profile above provides sufficient guidance for natural Hinglish delivery
   } else if (language === 'hi-IN') {
     parts.push('\n// LANGUAGE PROFILE: Hindi');
     parts.push('You communicate in pure Hindi. Follow these patterns:');
@@ -196,7 +195,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('Use the logic, data, pricing, features, and strategies described in these documents as your core decision-making framework.\n');
 
     let totalChars = 0;
-    const maxTotalChars = 30000; // Gemini context limit safety
+    const maxTotalChars = 15000; // Gemini 30K limit safety - reserve for other prompt parts
 
     docsToInject.forEach((doc, index) => {
       const remaining = maxTotalChars - totalChars;
@@ -226,7 +225,12 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push(`- This call should not exceed ${minutes} minutes`);
   }
 
-  return parts.join('\n');
+  const systemInstruction = parts.join('\n');
+  const totalChars = systemInstruction.length;
+  const safeMargin = totalChars < 25000 ? '✅' : totalChars < 30000 ? '⚠️' : '❌';
+  console.log(`📋 System instruction built: ${totalChars} chars ${safeMargin} (safe limit: 25K, hard limit: 30K), knowledge docs: ${knowledgeDocs.length}`);
+
+  return systemInstruction;
 };
 
 /**
