@@ -18,6 +18,9 @@ const getMonthKey = () => {
  * OUTBOUND CALL - Routes through agent's assigned VOIP provider
  */
 export const startOutboundCall = async (req, res) => {
+  let voipProvider = null;
+  let call = null;
+
   try {
     const { agentId, leadId, toPhone } = req.body;
 
@@ -39,7 +42,7 @@ export const startOutboundCall = async (req, res) => {
     console.log(`📱 [startOutboundCall] ├─ Lead ID: ${leadId || 'none'}`);
     console.log(`📱 [startOutboundCall] └─ Fetching assigned VOIP provider...`);
 
-    const voipProvider = await getAgentProviderOrFallback(agentId);
+    voipProvider = await getAgentProviderOrFallback(agentId);
 
     if (!voipProvider) {
       console.error(`❌ [startOutboundCall] No VOIP provider found (not even fallback)`);
@@ -90,7 +93,7 @@ export const startOutboundCall = async (req, res) => {
     }
 
     // Create call record
-    const call = await Call.create({
+    call = await Call.create({
       userId: req.user.id,
       agentId,
       leadId,
@@ -166,15 +169,17 @@ export const startOutboundCall = async (req, res) => {
   } catch (err) {
     console.error("\n❌ [startOutboundCall] CALL EXECUTION FAILED");
     console.error(`   ├─ Error: ${err.message}`);
-    console.error(`   ├─ Provider: ${voipProvider.provider}`);
+    console.error(`   ├─ Provider: ${voipProvider?.provider || 'unknown'}`);
     console.error(`   └─ Full error:`, err.stack);
 
     // Update call record with failure status
     try {
-      const failedCall = await Call.findById(call._id);
-      if (failedCall) {
-        failedCall.status = "FAILED";
-        await failedCall.save();
+      if (call && call._id) {
+        const failedCall = await Call.findById(call._id);
+        if (failedCall) {
+          failedCall.status = "FAILED";
+          await failedCall.save();
+        }
       }
     } catch (saveErr) {
       console.error("Failed to update call status:", saveErr.message);
