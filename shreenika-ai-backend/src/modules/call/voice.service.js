@@ -20,6 +20,7 @@ import { createGeminiLiveSession } from '../../config/google.live.client.js';
 import { createVoiceCustomization } from '../voice/voice-customization.service.js';
 import LatencyTracker from '../voice/latency-tracker.service.js';
 import { enhanceResponseForLatency } from '../voice/response-enhancer.service.js';
+import HedgeEngine from '../voice/hedge-engine.service.js';
 import { io } from '../../server.js';
 
 /**
@@ -40,6 +41,7 @@ export class VoiceService extends EventEmitter {
     this.geminiSession = null;
     this.voiceCustomization = null; // Voice customization service
     this.latencyTracker = new LatencyTracker(callId, agentId); // Track latency
+    this.hedgeEngine = new HedgeEngine(callId, agentId); // Latency masking (Hedge Engine)
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -87,6 +89,21 @@ export class VoiceService extends EventEmitter {
       console.log(`   ├─ Emotion Level: ${voiceProfile.emotions.toFixed(2)}`);
       console.log(`   ├─ Voice Speed: ${voiceProfile.voiceSpeed.toFixed(2)}x`);
       console.log(`   └─ Background Noise: ${voiceProfile.backgroundNoise}`);
+
+      // Initialize Hedge Engine with filler audio
+      try {
+        this.hedgeEngine.fillerBuffers = await HedgeEngine.initializeFillers();
+        this.hedgeEngine.on('playFiller', (fillerBuffer) => {
+          // Emit filler audio to be played
+          if (fillerBuffer) {
+            console.log(`🎙️ Playing filler audio (${fillerBuffer.length} bytes)`);
+            this.emit('audio', fillerBuffer);
+          }
+        });
+        console.log(`🎯 Hedge Engine initialized (400ms latency masking)`);
+      } catch (err) {
+        console.warn('⚠️ Hedge Engine setup failed:', err.message);
+      }
 
       // Fetch knowledge documents from DB for this agent
       let knowledgeDocs = [];
@@ -153,6 +170,10 @@ export class VoiceService extends EventEmitter {
     // Audio response from Gemini
     this.geminiSession.on('audio', (audioBuffer) => {
       this.audioChunksReceived++;
+      // Mark Gemini audio received for Hedge Engine
+      if (this.audioChunksReceived === 1) {
+        this.hedgeEngine.markGeminiAudioReceived();
+      }
       this.emit('audio', audioBuffer);
     });
 
@@ -227,10 +248,24 @@ export class VoiceService extends EventEmitter {
 
     // Detect user speech (energy level indicates speaking)
     const speechThreshold = 20; // RMS threshold for speech
+
+    // User starts speaking
     if (energyLevel > speechThreshold && !this.userSpeechStart) {
       this.userSpeechStart = Date.now();
       this.latencyTracker.markUserSpeechDetected();
       console.log(`🎤 User speech detected, starting latency measurement`);
+    }
+
+    // User stops speaking (energy drops below threshold)
+    if (energyLevel <= speechThreshold && this.userSpeechStart && !this._userSpeechEnded) {
+      this._userSpeechEnded = true;
+      this.hedgeEngine.markUserSpeechEnded();
+      console.log(`🤐 User speech ended, Hedge Engine activated`);
+    }
+
+    // Reset speech-ended flag when speaking resumes
+    if (energyLevel > speechThreshold && this._userSpeechEnded) {
+      this._userSpeechEnded = false;
     }
 
     this.audioChunksSent++;
@@ -359,6 +394,11 @@ export class VoiceService extends EventEmitter {
     if (this.isClosed) return;
 
     console.log(`🛑 Closing voice service for call: ${this.callId}`);
+
+    // Close Hedge Engine
+    if (this.hedgeEngine) {
+      this.hedgeEngine.close();
+    }
 
     // Close Gemini session
     if (this.geminiSession) {
