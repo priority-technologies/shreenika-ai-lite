@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { io, Socket } from 'socket.io-client';
 import { Lead, CallLog, AgentConfig, CallStatus } from '../types';
-import { 
-  Phone, 
-  Play, 
+import {
+  Phone,
+  Play,
   Pause,
-  Search, 
-  Loader2, 
-  User, 
-  CheckCircle2, 
+  Search,
+  Loader2,
+  User,
+  CheckCircle2,
   XCircle,
   MoreVertical,
   Info,
@@ -67,38 +68,59 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
     log.phoneNumber?.includes(searchTerm)
   );
 
-   useEffect(() => {
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
-  const wsUrl = apiBase.replace(/^http/, "ws");
+  // Socket.IO connection for real-time call updates
+  useEffect(() => {
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
 
-  let socket: WebSocket;
-  try {
-    socket = new WebSocket(wsUrl);
+    console.log(`📡 Connecting to Socket.IO at ${apiBase}`);
 
-    socket.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+    // Initialize Socket.IO connection
+    const socket: Socket = io(apiBase, {
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 5,
+      transports: ['websocket', 'polling'] // Fallback to polling if WebSocket fails
+    });
 
-      if (data.type === "INCOMING_CALL") {
-        setIncomingCall({
-          phoneNumber: data.phoneNumber,
-          callId: data.callId
-        });
-      }
+    // Connection events
+    socket.on('connect', () => {
+      console.log('✅ Socket.IO connected:', socket.id);
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ Socket.IO disconnected');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket.IO connection error:', error);
+    });
+
+    // Real-time call updates
+    socket.on('INCOMING_CALL', (data) => {
+      console.log('📞 Incoming call:', data);
+      setIncomingCall({
+        phoneNumber: data.phoneNumber,
+        callId: data.callId
+      });
+    });
+
+    socket.on('CALL_STATUS_UPDATE', (data) => {
+      console.log('📞 Call status update:', data);
+      // Could update call status in real-time here
+    });
+
+    socket.on('CAMPAIGN_PROGRESS', (data) => {
+      console.log('📢 Campaign progress:', data);
+      setCampaignProgress(data.progress);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🧹 Disconnecting Socket.IO');
+      socket.disconnect();
     };
-
-    socket.onerror = (err) => {
-      console.warn("WebSocket connection failed:", err);
-    };
-  } catch (err) {
-    console.warn("WebSocket not available:", err);
-  }
-
-  return () => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.close();
-    }
-  };
-}, []);
+  }, []);
 
 
    const selectedLeads = leads.filter((lead) =>
@@ -180,23 +202,6 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
     }
   };
 
-  /* =========================
-     WEBSOCKET (READY FOR REAL-TIME)
-  ========================= */
-  useEffect(() => {
-    // TODO: Connect to WebSocket for real-time call updates
-    // const ws = new WebSocket('ws://localhost:5000/calls');
-    // ws.onmessage = (event) => {
-    //   const update = JSON.parse(event.data);
-    //   if (update.type === 'CALL_COMPLETED') {
-    //     setLogs(prev => [update.call, ...prev]);
-    //   }
-    //   if (update.type === 'CAMPAIGN_PROGRESS') {
-    //     setCampaignProgress(update.progress);
-    //   }
-    // };
-    // return () => ws.close();
-  }, []);
 
   /* =========================
      FORMAT HELPERS
