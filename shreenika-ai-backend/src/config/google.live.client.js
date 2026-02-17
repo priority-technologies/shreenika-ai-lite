@@ -10,6 +10,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import { calculateProsodyProfile, generateProsodyInstructions } from '../modules/voice/prosody.service.js';
+import { generateHinglishProsodyPrompt } from '../modules/voice/hinglish-prosody.service.js';
 
 const GEMINI_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
@@ -124,6 +125,9 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Questions have high pitch peaks around 210-230 Hz - sound curious and engaged');
     parts.push('- Use prosodic fillers naturally: "Haan...", "So...", "Matlab..." to maintain conversational flow');
     parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
+
+    // Add comprehensive Hinglish prosody guidance
+    parts.push(generateHinglishProsodyPrompt());
   } else if (language === 'hi-IN') {
     parts.push('\n// LANGUAGE PROFILE: Hindi');
     parts.push('You communicate in pure Hindi. Follow these patterns:');
