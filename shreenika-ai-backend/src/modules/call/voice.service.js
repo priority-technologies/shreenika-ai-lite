@@ -18,6 +18,8 @@ import Call from './call.model.js';
 import Knowledge from '../knowledge/knowledge.model.js';
 import { createGeminiLiveSession } from '../../config/google.live.client.js';
 import { createVoiceCustomization } from '../voice/voice-customization.service.js';
+import LatencyTracker from '../voice/latency-tracker.service.js';
+import { enhanceResponseForLatency } from '../voice/response-enhancer.service.js';
 import { io } from '../../server.js';
 
 /**
@@ -37,6 +39,7 @@ export class VoiceService extends EventEmitter {
     this.call = null;
     this.geminiSession = null;
     this.voiceCustomization = null; // Voice customization service
+    this.latencyTracker = new LatencyTracker(callId, agentId); // Track latency
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -47,6 +50,7 @@ export class VoiceService extends EventEmitter {
     this.audioChunksSent = 0;
     this.audioChunksReceived = 0;
     this.startTime = null;
+    this.userSpeechStart = null; // Track when user starts speaking
   }
 
   /**
@@ -154,14 +158,24 @@ export class VoiceService extends EventEmitter {
 
     // Text response from Gemini (for transcript)
     this.geminiSession.on('text', (text) => {
+      // Mark first response chunk for latency tracking
+      if (!this.userSpeechStart && this.currentTurnText.length === 0) {
+        this.latencyTracker.markFirstResponseAudioChunk();
+      }
+
       this.currentTurnText += text;
     });
 
     // Turn complete (agent finished speaking)
     this.geminiSession.on('turnComplete', () => {
       if (this.currentTurnText) {
-        this._addConversationTurn('agent', this.currentTurnText);
+        // Enhance response with latency optimization
+        const shouldEnhance = this.userSpeechStart !== null;
+        this._addConversationTurn('agent', this.currentTurnText, shouldEnhance);
         this.currentTurnText = '';
+
+        // Reset for next turn
+        this.userSpeechStart = null;
       }
     });
 
@@ -199,8 +213,9 @@ export class VoiceService extends EventEmitter {
   /**
    * Send audio to Gemini Live
    * @param {Buffer} pcmBuffer - PCM 16-bit 16kHz audio
+   * @param {number} energyLevel - Audio energy level (0-100) for speech detection
    */
-  sendAudio(pcmBuffer) {
+  sendAudio(pcmBuffer, energyLevel = 0) {
     if (!this.isReady || this.isClosed) {
       if (this._audioDropCount === undefined) this._audioDropCount = 0;
       this._audioDropCount++;
@@ -208,6 +223,14 @@ export class VoiceService extends EventEmitter {
         console.warn(`⚠️ VoiceService: Audio dropped - isReady=${this.isReady}, isClosed=${this.isClosed} (dropped ${this._audioDropCount} chunks)`);
       }
       return;
+    }
+
+    // Detect user speech (energy level indicates speaking)
+    const speechThreshold = 20; // RMS threshold for speech
+    if (energyLevel > speechThreshold && !this.userSpeechStart) {
+      this.userSpeechStart = Date.now();
+      this.latencyTracker.markUserSpeechDetected();
+      console.log(`🎤 User speech detected, starting latency measurement`);
     }
 
     this.audioChunksSent++;
@@ -230,22 +253,40 @@ export class VoiceService extends EventEmitter {
   }
 
   /**
-   * Add a conversation turn
+   * Add a conversation turn with optional latency enhancement
    * @private
    * @param {string} role - 'agent' or 'user'
    * @param {string} content - Text content
+   * @param {boolean} enhanceForLatency - Apply latency optimization
    */
-  _addConversationTurn(role, content) {
+  _addConversationTurn(role, content, enhanceForLatency = false) {
+    let enhancedContent = content;
+
+    // Enhance agent responses for latency if needed
+    if (role === 'agent' && enhanceForLatency && this.userSpeechStart) {
+      const responseLatency = Date.now() - this.userSpeechStart;
+      enhancedContent = enhanceResponseForLatency(
+        content,
+        responseLatency,
+        this.agent,
+        this.voiceConfig
+      );
+
+      console.log(`✨ Response enhanced (latency: ${responseLatency}ms): Added fillers/pauses`);
+    }
+
     const turn = {
       role,
-      content,
-      timestamp: new Date()
+      content: enhancedContent,
+      timestamp: new Date(),
+      originalContent: enhancedContent !== content ? content : null, // Store original if enhanced
+      latency: role === 'agent' && this.userSpeechStart ? Date.now() - this.userSpeechStart : null
     };
 
     this.conversationTurns.push(turn);
 
     // Emit for real-time transcript
-    this.emit('text', content, role);
+    this.emit('text', enhancedContent, role);
 
     // Emit via Socket.IO for frontend updates
     if (this.call && this.call.userId) {
@@ -257,7 +298,7 @@ export class VoiceService extends EventEmitter {
     }
 
     // Log
-    console.log(`💬 [${role.toUpperCase()}]: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);
+    console.log(`💬 [${role.toUpperCase()}]: ${enhancedContent.substring(0, 100)}${enhancedContent.length > 100 ? '...' : ''}`);
   }
 
   /**
@@ -273,6 +314,9 @@ export class VoiceService extends EventEmitter {
     console.log(`   - Audio chunks sent: ${this.audioChunksSent}`);
     console.log(`   - Audio chunks received: ${this.audioChunksReceived}`);
     console.log(`   - Conversation turns: ${this.conversationTurns.length}`);
+
+    // Log latency diagnostics
+    this.latencyTracker.logDiagnostics();
 
     // Save conversation turns to call document
     try {
