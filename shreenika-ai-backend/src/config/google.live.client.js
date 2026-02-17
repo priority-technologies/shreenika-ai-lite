@@ -10,6 +10,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import { calculateProsodyProfile, generateProsodyInstructions } from '../modules/voice/prosody.service.js';
+import ContextCachingService from '../modules/voice/context-caching.service.js';
 
 const GEMINI_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
@@ -144,60 +145,17 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push(agent.prompt);
   }
 
-  // ===== KNOWLEDGE BASE INJECTION =====
-  // Priority 1: Knowledge documents fetched from DB (full text)
-  // Priority 2: Embedded content in agent.knowledgeBase array
-  const docsToInject = [];
-
-  // From DB-fetched knowledge documents
-  if (knowledgeDocs && knowledgeDocs.length > 0) {
-    knowledgeDocs.forEach(doc => {
-      if (doc.rawText || doc.content) {
-        docsToInject.push({
-          title: doc.title || 'Untitled',
-          content: doc.rawText || doc.content
-        });
-      }
-    });
-  }
-
-  // Fallback: from embedded knowledgeBase array on agent
-  if (docsToInject.length === 0 && agent.knowledgeBase && agent.knowledgeBase.length > 0) {
-    agent.knowledgeBase.forEach(item => {
-      if (item.content) {
-        docsToInject.push({
-          title: item.name || 'Untitled',
-          content: item.content
-        });
-      }
-    });
-  }
-
-  // Inject knowledge into system prompt
-  if (docsToInject.length > 0) {
-    parts.push('\n===== TRAINING KNOWLEDGE BASE =====');
-    parts.push('You have been trained on the following documents. Use this knowledge to make informed decisions during the conversation.');
-    parts.push('Study, learn, and apply the content from these documents when answering questions, making recommendations, or handling objections.');
-    parts.push('Use the logic, data, pricing, features, and strategies described in these documents as your core decision-making framework.\n');
-
-    let totalChars = 0;
-    const maxTotalChars = 15000; // Gemini 30K limit safety - reserve for other prompt parts
-
-    docsToInject.forEach((doc, index) => {
-      const remaining = maxTotalChars - totalChars;
-      if (remaining <= 0) return;
-
-      const content = doc.content.substring(0, Math.min(remaining, 10000));
-      parts.push(`[Document ${index + 1}: ${doc.title}]`);
-      parts.push(content);
-      parts.push('');
-      totalChars += content.length;
-    });
-
-    parts.push('===== END KNOWLEDGE BASE =====\n');
-    parts.push('IMPORTANT: Use the above knowledge to support your conversations. Reference specific data, features, or pricing from the documents when relevant.');
-    parts.push('If a question falls outside the knowledge base, acknowledge that honestly and offer to help with what you do know.\n');
-  }
+  // ===== KNOWLEDGE BASE (Via Context Caching) =====
+  // Knowledge documents are now handled via Context Caching Service
+  // instead of being injected into systemInstruction.
+  // This provides:
+  // - No character/token overhead in system prompt
+  // - 90% cost savings on cached tokens
+  // - Faster document retrieval from Google's cache
+  // - Support for documents up to 200K+ chars (vs 30K limit)
+  //
+  // The createGeminiLiveSession() factory will handle cache creation
+  // and pass cache_id to the WebSocket setup message.
 
   // Call handling instructions
   parts.push('\n\nCall handling guidelines:');
@@ -214,7 +172,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
   const systemInstruction = parts.join('\n');
   const totalChars = systemInstruction.length;
   const safeMargin = totalChars < 25000 ? '✅' : totalChars < 30000 ? '⚠️' : '❌';
-  console.log(`📋 System instruction built: ${totalChars} chars ${safeMargin} (safe limit: 25K, hard limit: 30K), knowledge docs: ${knowledgeDocs.length}`);
+  console.log(`📋 System instruction built: ${totalChars} chars ${safeMargin} (safe: <25K), knowledge handled via Context Caching (${knowledgeDocs.length} docs)`);
 
   return systemInstruction;
 };
@@ -233,6 +191,7 @@ export class GeminiLiveSession extends EventEmitter {
     this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
+    this.cacheId = options.cacheId || null; // Context Caching support
 
     this.ws = null;
     this.isConnected = false;
@@ -365,6 +324,12 @@ export class GeminiLiveSession extends EventEmitter {
       setupMessage.setup.systemInstruction = {
         parts: [{ text: this.systemInstruction }]
       };
+    }
+
+    // Add cached content if available (Context Caching)
+    if (this.cacheId) {
+      setupMessage.setup.cachedContent = this.cacheId;
+      console.log(`📦 Using cached content: ${this.cacheId}`);
     }
 
     this._send(setupMessage);
@@ -524,12 +489,14 @@ export class GeminiLiveSession extends EventEmitter {
 
 /**
  * Create a Gemini Live session with agent configuration
+ * Handles Context Caching for knowledge documents
+ * @async
  * @param {Object} agent - Agent document from MongoDB
  * @param {Array} knowledgeDocs - Knowledge documents from DB (optional)
  * @param {Object} voiceConfig - Voice customization config (optional)
- * @returns {GeminiLiveSession} - Configured session
+ * @returns {Promise<GeminiLiveSession>} - Configured session
  */
-export const createGeminiLiveSession = (agent, knowledgeDocs = [], voiceConfig = null) => {
+export const createGeminiLiveSession = async (agent, knowledgeDocs = [], voiceConfig = null) => {
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
@@ -539,11 +506,21 @@ export const createGeminiLiveSession = (agent, knowledgeDocs = [], voiceConfig =
   const systemInstruction = buildSystemInstruction(agent, knowledgeDocs, voiceConfig);
   const voice = mapAgentVoiceToGemini(agent.voiceProfile?.voiceId || agent.voiceId);
 
-  console.log(`📋 System instruction built: ${systemInstruction.length} chars, ${knowledgeDocs.length} knowledge docs injected`);
+  // Initialize Context Caching for knowledge documents
+  let cacheId = null;
+  if (knowledgeDocs && knowledgeDocs.length > 0) {
+    try {
+      const cachingService = new ContextCachingService(apiKey);
+      cacheId = await cachingService.getOrCreateCache(agent._id.toString(), knowledgeDocs);
+    } catch (err) {
+      console.warn('⚠️ Context Caching failed, continuing without cache:', err.message);
+    }
+  }
 
   return new GeminiLiveSession(apiKey, {
     systemInstruction,
-    voice
+    voice,
+    cacheId  // Pass cache ID to session
   });
 };
 

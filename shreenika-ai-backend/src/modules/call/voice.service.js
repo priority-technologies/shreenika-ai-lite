@@ -117,9 +117,9 @@ export class VoiceService extends EventEmitter {
         console.warn('⚠️ Failed to load knowledge docs:', err.message);
       }
 
-      // Create Gemini Live session with voice customization
+      // Create Gemini Live session with voice customization and Context Caching
       try {
-        this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
+        this.geminiSession = await createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
       } catch (err) {
         console.error(`❌ Failed to create Gemini session:`, err.message);
         throw new Error(`Gemini session creation failed: ${err.message}`);
