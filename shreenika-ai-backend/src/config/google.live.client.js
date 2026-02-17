@@ -9,6 +9,7 @@
 
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
+import { calculateProsodyProfile, generateProsodyInstructions } from '../modules/voice/prosody.service.js';
 
 const GEMINI_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
@@ -98,6 +99,18 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     }
   }
 
+  // ===== PROSODY PROFILE CALCULATION =====
+  // Calculate acoustic parameters based on voice customization
+  const prosodyProfile = calculateProsodyProfile(agent, voiceConfig);
+  const prosodyInstructions = generateProsodyInstructions(prosodyProfile);
+
+  // Inject prosody guidance
+  parts.push('\n// ===== PROSODY GUIDANCE (Acoustic Parameters) =====');
+  parts.push('These acoustic parameters guide your natural speech delivery:');
+  prosodyInstructions.forEach(instr => {
+    parts.push(`- ${instr}`);
+  });
+
   // ===== LANGUAGE-SPECIFIC BEHAVIOR =====
   // Inject language-specific instructions for authentic tone and prosody
   if (language === 'hinglish') {
@@ -110,6 +123,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Use schwa deletion pattern where applicable (natural pronunciation)');
     parts.push('- Questions have high pitch peaks around 210-230 Hz - sound curious and engaged');
     parts.push('- Use prosodic fillers naturally: "Haan...", "So...", "Matlab..." to maintain conversational flow');
+    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
   } else if (language === 'hi-IN') {
     parts.push('\n// LANGUAGE PROFILE: Hindi');
     parts.push('You communicate in pure Hindi. Follow these patterns:');
@@ -117,6 +131,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Use native Hindi phonetics and intonation patterns');
     parts.push('- Sound warm and engaged with high prosody variation');
     parts.push('- Use natural Hindi expressions and idioms');
+    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
   } else if (language === 'en-IN') {
     parts.push('\n// LANGUAGE PROFILE: English (Indian)');
     parts.push('You communicate in Indian English with authenticity:');
@@ -124,12 +139,14 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Adopt Indian speech rhythm and intonation patterns');
     parts.push('- Sound warm, engaged, and personable');
     parts.push('- Use common Indian phrases naturally in conversation');
+    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
   } else if (language === 'en-US') {
     parts.push('\n// LANGUAGE PROFILE: English (American)');
     parts.push('You communicate in American English:');
     parts.push('- Use American English expressions and phrasing');
     parts.push('- Adopt American speech rhythm and intonation');
     parts.push('- Sound professional, confident, and engaging');
+    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
   }
 
   // Custom prompt
