@@ -131,8 +131,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Conversational tone, never robotic');
   }
 
-  // Add emotion-based acoustic guidance
-  const emotionLevel = voiceConfig?.characteristics40?.emotions ?? agent.speechSettings?.emotions ?? 0.5;
+  // Add emotion-based acoustic guidance (emotionLevel already defined above)
   if (emotionLevel > 0.7) {
     parts.push('- Deliver with enthusiasm, energy, and warmth (higher pitch, faster pace)');
   } else if (emotionLevel < 0.3) {
