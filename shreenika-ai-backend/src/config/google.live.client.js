@@ -58,6 +58,9 @@ export const mapAgentVoiceToGemini = (agentVoiceId) => {
 export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = null) => {
   const parts = [];
 
+  // Extract language from agent configuration
+  const language = agent.voiceProfile?.language || agent.language || 'en-US';
+
   // Agent identity
   parts.push(`You are ${agent.name}, a ${agent.title || 'voice assistant'}.`);
 
@@ -99,57 +102,40 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     }
   }
 
-  // ===== PROSODY PROFILE CALCULATION =====
-  // Calculate acoustic parameters based on voice customization
-  const prosodyProfile = calculateProsodyProfile(agent, voiceConfig);
-  const prosodyInstructions = generateProsodyInstructions(prosodyProfile);
+  // ===== ACOUSTIC STEERING (Gemini Native Audio Directives) =====
+  // Per Gemini 2.5 native audio, use natural language for acoustic control
+  parts.push('\nACOUSTIC STEERING FOR VOICE DELIVERY:');
 
-  // Inject prosody guidance
-  parts.push('\n// ===== PROSODY GUIDANCE (Acoustic Parameters) =====');
-  parts.push('These acoustic parameters guide your natural speech delivery:');
-  prosodyInstructions.forEach(instr => {
-    parts.push(`- ${instr}`);
-  });
-
-  // ===== LANGUAGE-SPECIFIC BEHAVIOR =====
-  // Inject language-specific instructions for authentic tone and prosody
   if (language === 'hinglish') {
-    parts.push('\n// LANGUAGE PROFILE: Hinglish (Hindi-English Mix)');
-    parts.push('You communicate naturally in Hinglish (Hindi and English blend). Follow these patterns:');
-    parts.push('- Mix Hindi and English words naturally in sentences (e.g., "Haan, bilkul! That\'s perfect.")');
-    parts.push('- Use common Hinglish expressions: "Haan", "Nahi", "Bilkul", "Matlab", "Bhai", "Acha"');
-    parts.push('- Use rising intonation for statements (not falling like English) - convey warmth and involvement');
-    parts.push('- Emphasize first syllable of multi-syllabic words (e.g., "COMputer" not "comPUter")');
-    parts.push('- Use natural schwa deletion pattern (natural pronunciation)');
-    parts.push('- Questions should sound curious and engaged with natural pitch variation');
-    parts.push('- Use prosodic fillers naturally: "Haan...", "So...", "Matlab..." to maintain conversational flow');
-    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
-
-    // NOTE: Comprehensive Hinglish prosody prompt REMOVED to stay under Gemini's 30K system prompt limit
-    // The short language profile above provides sufficient guidance for natural Hinglish delivery
+    parts.push('- Use Hinglish rhythm (warm, conversational blend of Hindi and English)');
+    parts.push('- Speak with upward inflection (rising intonation) at sentence ends to convey warmth');
+    parts.push('- First syllable stress on multi-syllabic words (e.g., COMputer, IMportant)');
+    parts.push('- Use natural Hinglish fillers: "Acha", "Haan", "Matlab" for conversational flow');
+    parts.push('- Mix Hindi and English naturally in speech, never robotic or forced');
+    parts.push('- Sound genuinely engaged, never transactional or formal');
   } else if (language === 'hi-IN') {
-    parts.push('\n// LANGUAGE PROFILE: Hindi');
-    parts.push('You communicate in pure Hindi. Follow these patterns:');
-    parts.push('- Respond only in Hindi, no English words');
-    parts.push('- Use native Hindi phonetics and intonation patterns');
-    parts.push('- Sound warm and engaged with high prosody variation');
-    parts.push('- Use natural Hindi expressions and idioms');
-    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
+    parts.push('- Use authentic Hindi intonation and rhythm');
+    parts.push('- Sound warm, engaged, and emotionally expressive');
+    parts.push('- Use natural Hindi expressions and colloquialisms');
+    parts.push('- Maintain high prosody variation (expressive, not monotone)');
   } else if (language === 'en-IN') {
-    parts.push('\n// LANGUAGE PROFILE: English (Indian)');
-    parts.push('You communicate in Indian English with authenticity:');
-    parts.push('- Use Indian English expressions and phrasing');
-    parts.push('- Adopt Indian speech rhythm and intonation patterns');
-    parts.push('- Sound warm, engaged, and personable');
-    parts.push('- Use common Indian phrases naturally in conversation');
-    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
-  } else if (language === 'en-US') {
-    parts.push('\n// LANGUAGE PROFILE: English (American)');
-    parts.push('You communicate in American English:');
-    parts.push('- Use American English expressions and phrasing');
-    parts.push('- Adopt American speech rhythm and intonation');
-    parts.push('- Sound professional, confident, and engaging');
-    parts.push(`- Target pitch range: ${prosodyProfile.pitch.hz}Hz (emotion: ${(prosodyProfile.pitch.emotion * 100).toFixed(0)}%)`);
+    parts.push('- Use Indian English rhythm and phrasing');
+    parts.push('- Sound warm, personable, and authentically Indian');
+    parts.push('- Natural intonation patterns of Indian English speakers');
+    parts.push('- Use common Indian expressions naturally in conversation');
+  } else {
+    // Default: American English
+    parts.push('- Use American English rhythm and intonation');
+    parts.push('- Sound professional, confident, and naturally engaging');
+    parts.push('- Conversational tone, never robotic');
+  }
+
+  // Add emotion-based acoustic guidance
+  const emotionLevel = voiceConfig?.characteristics40?.emotions ?? agent.speechSettings?.emotions ?? 0.5;
+  if (emotionLevel > 0.7) {
+    parts.push('- Deliver with enthusiasm, energy, and warmth (higher pitch, faster pace)');
+  } else if (emotionLevel < 0.3) {
+    parts.push('- Deliver with calm, measured tone (lower pitch, slower pace, thoughtful pauses)');
   }
 
   // Custom prompt
