@@ -270,7 +270,8 @@ export const twilioVoice = async (req, res) => {
 };
 
 /**
- * STATUS CALLBACK
+ * STATUS CALLBACK - Handles call completion events from Twilio
+ * Includes Twilio error code logging and campaign queue triggering
  */
 export const twilioStatus = async (req, res) => {
   try {
@@ -278,7 +279,9 @@ export const twilioStatus = async (req, res) => {
       CallSid,
       CallStatus,
       CallDuration,
-      RecordingUrl
+      RecordingUrl,
+      ErrorCode,
+      ErrorMessage
     } = req.body;
 
     const call = await Call.findOne({ twilioCallSid: CallSid });
@@ -286,10 +289,18 @@ export const twilioStatus = async (req, res) => {
 
     call.status = CallStatus.toUpperCase();
 
+    // Log Twilio error code if present
+    if (ErrorCode) {
+      call.endReason = `Twilio ${ErrorCode}: ${ErrorMessage || 'Unknown error'}`;
+      console.warn(`⚠️ [Twilio] Call ${CallSid} error ${ErrorCode}: ${ErrorMessage}`);
+    }
+
     if (CallStatus === "completed") {
       call.durationSeconds = Number(CallDuration || 0);
       call.recordingUrl = RecordingUrl || null;
       await call.save();
+
+      // Trigger AI processing
       import("../call/call.processor.js").then(({ processCompletedCall }) => {
         processCompletedCall(call._id);
       });
@@ -302,6 +313,25 @@ export const twilioStatus = async (req, res) => {
         { $inc: { voiceMinutesUsed: minutes } },
         { upsert: true }
       );
+
+      // If this call is part of a campaign, trigger the next call in the queue
+      if (call.campaignId) {
+        console.log(`[Campaign] Call completed. Triggering next call in queue...`);
+        import("./call.controller.js").then(({ processCampaignNextCall }) => {
+          processCampaignNextCall(call.campaignId, call.agentId, call.userId);
+        });
+      }
+    } else if (CallStatus === "failed" || CallStatus === "no-answer" || CallStatus === "busy" || CallStatus === "canceled") {
+      // Handle failed/no-answer calls
+      await call.save();
+
+      // If this call is part of a campaign, trigger the next call in the queue
+      if (call.campaignId) {
+        console.log(`[Campaign] Call ${CallStatus}. Triggering next call in queue...`);
+        import("./call.controller.js").then(({ processCampaignNextCall }) => {
+          processCampaignNextCall(call.campaignId, call.agentId, call.userId);
+        });
+      }
     } else {
       await call.save();
     }
@@ -309,6 +339,67 @@ export const twilioStatus = async (req, res) => {
     res.sendStatus(200);
   } catch (err) {
     console.error("Twilio status error:", err.message);
+    res.sendStatus(200);
+  }
+};
+
+/**
+ * AMD STATUS CALLBACK - Handles Answering Machine Detection results from Twilio
+ * Updates call outcome to 'voicemail' if machine is detected
+ */
+export const twilioAmdStatus = async (req, res) => {
+  try {
+    const { CallSid, AnsweredBy } = req.body;
+
+    const call = await Call.findOne({ twilioCallSid: CallSid });
+    if (!call) return res.sendStatus(200);
+
+    if (AnsweredBy === 'machine_start') {
+      // Voicemail/answering machine detected
+      call.dialStatus = 'Voicemail detected';
+      call.outcome = 'voicemail';
+      console.log(`📱 [AMD] Voicemail detected for call ${CallSid}`);
+    } else if (AnsweredBy === 'human') {
+      // Human answered
+      call.dialStatus = 'Human answered';
+      console.log(`📱 [AMD] Human answered for call ${CallSid}`);
+    }
+
+    await call.save();
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("AMD status error:", err.message);
+    res.sendStatus(200);
+  }
+};
+
+/**
+ * RECORDING STATUS CALLBACK - Handles recording completion from Twilio
+ * Retrieves recording URL and triggers AI transcription
+ */
+export const twilioRecordingStatus = async (req, res) => {
+  try {
+    const { RecordingUrl, CallSid } = req.body;
+
+    const call = await Call.findOne({ twilioCallSid: CallSid });
+    if (!call) return res.sendStatus(200);
+
+    if (RecordingUrl) {
+      call.recordingUrl = RecordingUrl;
+      await call.save();
+      console.log(`📹 [Recording] URL saved for call ${CallSid}`);
+
+      // Trigger AI processing if not already done
+      if (!call.aiProcessed) {
+        import("../call/call.processor.js").then(({ processCompletedCall }) => {
+          processCompletedCall(call._id);
+        });
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("Recording status error:", err.message);
     res.sendStatus(200);
   }
 };

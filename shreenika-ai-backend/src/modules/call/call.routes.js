@@ -6,6 +6,11 @@ import {
   listCalls,
   startCampaign,
   stopCampaign,
+  pauseCampaign,
+  resumeCampaign,
+  getCampaign,
+  getCampaignLogs,
+  listCampaigns,
   redialCall,
   archiveCall,
 } from "./call.controller.js";
@@ -15,7 +20,12 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Campaign endpoints
+router.get("/campaigns", listCampaigns);
 router.post("/campaigns", startCampaign);
+router.get("/campaigns/:id", getCampaign);
+router.get("/campaigns/:id/logs", getCampaignLogs);
+router.post("/campaigns/:id/pause", pauseCampaign);
+router.post("/campaigns/:id/resume", resumeCampaign);
 router.post("/campaigns/stop", stopCampaign);
 
 // Call endpoints

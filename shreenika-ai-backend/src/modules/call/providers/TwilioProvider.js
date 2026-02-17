@@ -63,8 +63,10 @@ export class TwilioProvider extends BaseProvider {
       console.log(`📞 Twilio: Initiating call from ${fromPhone} to ${toPhone}`);
       console.log(`   Webhook URL: ${webhookUrl}`);
       console.log(`   Status callback: ${statusCallbackUrl || 'none'}`);
+      console.log(`   AMD: Enabled`);
+      console.log(`   Recording: Enabled`);
 
-      const call = await this.client.calls.create({
+      const callParams = {
         to: toPhone,
         from: fromPhone,
         url: webhookUrl,
@@ -72,8 +74,16 @@ export class TwilioProvider extends BaseProvider {
         statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
         statusCallbackMethod: 'POST',
         timeout: 60, // Ring timeout in seconds
-        record: false // Don't record by default
-      });
+        record: true, // Enable recording for transcription
+        recordingChannels: 'mono', // Mono recording
+        recordingStatusCallback: `${process.env.PUBLIC_BASE_URL}/twilio/recording-status`,
+        recordingStatusCallbackMethod: 'POST',
+        machineDetection: 'Enable', // Enable Answering Machine Detection (AMD)
+        asyncAmdStatusCallback: `${process.env.PUBLIC_BASE_URL}/twilio/amd-status`,
+        asyncAmdStatusCallbackMethod: 'POST'
+      };
+
+      const call = await this.client.calls.create(callParams);
 
       console.log(`✅ Twilio: Call initiated successfully`);
       console.log(`   Call SID: ${call.sid}`);

@@ -660,15 +660,70 @@ export const redialCall = async (req, res) => {
 };
 
 /**
- * List Calls
+ * List Calls with Search, Filter, and Sort
+ * Query params:
+ * - search: String to search in leadName or phoneNumber
+ * - status: Filter by call status (COMPLETED, FAILED, NO_ANSWER, etc.)
+ * - sentiment: Filter by sentiment (Positive, Negative, Neutral)
+ * - dateFrom: ISO date string for start of range
+ * - dateTo: ISO date string for end of range
+ * - sort: 'latest' (default) or 'oldest'
+ * - page: Page number (default 1)
+ * - limit: Items per page (default 50)
  */
 export const listCalls = async (req, res) => {
   try {
-    const calls = await Call.find({
+    const { search, status, sentiment, dateFrom, dateTo, sort = 'latest', page = 1, limit = 50 } = req.query;
+
+    // Build query filter
+    let filter = {
       userId: req.user._id,
       archived: false,
-    })
-      .sort({ createdAt: -1 })
+    };
+
+    // Search filter (leadName or phoneNumber)
+    if (search) {
+      filter.$or = [
+        { leadName: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Status filter
+    if (status) {
+      filter.status = status;
+    }
+
+    // Sentiment filter
+    if (sentiment) {
+      filter.sentiment = sentiment;
+    }
+
+    // Date range filter
+    if (dateFrom || dateTo) {
+      filter.createdAt = {};
+      if (dateFrom) {
+        filter.createdAt.$gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        filter.createdAt.$lte = new Date(dateTo);
+      }
+    }
+
+    // Count total matching documents
+    const total = await Call.countDocuments(filter);
+
+    // Determine sort order
+    const sortOrder = sort === 'oldest' ? 1 : -1;
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, Math.min(100, parseInt(limit) || 50)); // Cap at 100
+    const skip = (pageNum - 1) * limitNum;
+
+    // Fetch paginated results
+    const calls = await Call.find(filter)
+      .sort({ createdAt: sortOrder })
+      .skip(skip)
+      .limit(limitNum)
       .lean();
 
     // Map to frontend format
@@ -684,6 +739,7 @@ export const listCalls = async (req, res) => {
       transcript: call.transcript,
       summary: call.summary,
       sentiment: call.sentiment,
+      outcome: call.outcome,
       rating: call.rating,
       recordingUrl: call.recordingUrl,
       usageCost: call.usageCost,
@@ -691,7 +747,15 @@ export const listCalls = async (req, res) => {
       endReason: call.endReason,
     }));
 
-    res.json(formatted);
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      calls: formatted,
+      total,
+      page: pageNum,
+      pages: totalPages,
+      limit: limitNum,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -769,4 +833,117 @@ export const completeCall = async (req, res) => {
   }
 
   res.json({ success: true });
+};
+
+/**
+ * Process Campaign Next Call (StatusCallback-driven recursive queuing)
+ * Called from twilioStatus when a campaign call completes/fails/no-answer
+ * Initiates the next pending lead in the campaign if < 5 concurrent calls
+ */
+export const processCampaignNextCall = async (campaignId, agentId, userId) => {
+  try {
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign) {
+      console.warn(`[Campaign] Campaign ${campaignId} not found`);
+      return;
+    }
+
+    // Check if campaign is still active (not paused/stopped)
+    const campaignState = activeCampaigns.get(campaignId.toString());
+    if (!campaignState || !campaignState.active || campaignState.paused) {
+      console.log(`[Campaign] Campaign ${campaignId} is paused or stopped. Skipping next call.`);
+      return;
+    }
+
+    // Count currently active/in-progress calls for this campaign
+    const activeCalls = await Call.countDocuments({
+      campaignId,
+      status: { $in: ['INITIATED', 'DIALING', 'RINGING', 'ANSWERED'] }
+    });
+
+    console.log(`[Campaign] ${campaignId}: ${activeCalls} active calls. Max concurrent: 5`);
+
+    // If we have room for more concurrent calls
+    if (activeCalls < 5) {
+      // Find next call that's not yet been attempted in this campaign
+      // We track this by checking if call exists for the lead in this campaign
+      const attemptedLeadIds = await Call.find({ campaignId }).select('leadId').lean();
+      const attemptedLeadSet = new Set(attemptedLeadIds.map(c => c.leadId?.toString()));
+
+      // Find next lead in campaign.leads that hasn't been called yet
+      let nextLeadId = null;
+      for (const leadId of campaign.leads) {
+        if (!attemptedLeadSet.has(leadId.toString())) {
+          nextLeadId = leadId;
+          break;
+        }
+      }
+
+      if (nextLeadId) {
+        console.log(`[Campaign] ${campaignId}: Initiating next call for lead ${nextLeadId}`);
+
+        // Create call for next lead (reuse processSingleCall logic)
+        const lead = await Lead.findById(nextLeadId);
+        if (!lead) {
+          console.warn(`[Campaign] Lead ${nextLeadId} not found`);
+          return;
+        }
+
+        const call = await Call.create({
+          userId,
+          agentId,
+          leadId: nextLeadId,
+          campaignId,
+          direction: 'OUTBOUND',
+          status: 'INITIATED',
+          phoneNumber: lead.phone,
+          leadName: `${lead.firstName} ${lead.lastName}`
+        });
+
+        // Get VOIP provider and initiate call
+        const voipProvider = await getAgentProviderOrFallback(agentId);
+        if (!voipProvider) {
+          console.error(`[Campaign] Agent ${agentId} has no VOIP provider`);
+          return;
+        }
+
+        const fromPhone = await getAgentPhoneNumber(agentId);
+        const provider = ProviderFactory.createProvider(voipProvider);
+
+        const callResult = await provider.initiateCall({
+          toPhone: lead.phone,
+          fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
+          webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
+          statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
+        });
+
+        call.twilioCallSid = callResult.callSid;
+        call.providerCallId = callResult.providerCallId;
+        call.voipProvider = callResult.provider;
+        call.status = 'DIALING';
+        await call.save();
+
+        console.log(`   📞 [Campaign] ${lead.firstName} ${lead.lastName} (${lead.phone}) - DIALING`);
+      } else {
+        // All leads have been attempted - mark campaign as COMPLETED
+        console.log(`[Campaign] ${campaignId}: All leads attempted. Marking campaign as COMPLETED.`);
+        campaign.status = 'COMPLETED';
+        campaign.completedAt = new Date();
+        await campaign.save();
+        activeCampaigns.delete(campaignId.toString());
+
+        io.emit('campaign:completed', {
+          userId: userId.toString(),
+          campaignId: campaignId.toString(),
+          totalLeads: campaign.leads.length,
+          successfulCalls: campaign.successfulCalls,
+          failedCalls: campaign.failedCalls
+        });
+      }
+    } else {
+      console.log(`[Campaign] ${campaignId}: Already at 5 concurrent calls. Waiting for next completion.`);
+    }
+  } catch (err) {
+    console.error(`[Campaign] Error processing next call for campaign ${campaignId}:`, err);
+  }
 };

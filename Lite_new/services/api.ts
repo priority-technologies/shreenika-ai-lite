@@ -141,6 +141,45 @@ export const startCall = (payload: {
     method: "POST",
     body: JSON.stringify(payload),
   }, "core");
+
+// ==============================
+// CAMPAIGN APIs (CORE)
+// ==============================
+export const getCampaigns = () =>
+  apiFetch("/calls/campaigns", undefined, "core");
+
+export const getCampaignDetails = (campaignId: string) =>
+  apiFetch(`/calls/campaigns/${campaignId}`, undefined, "core");
+
+export const getCampaignLogs = (campaignId: string, page: number = 1, limit: number = 50) =>
+  apiFetch(`/calls/campaigns/${campaignId}/logs?page=${page}&limit=${limit}`, undefined, "core");
+
+export const createCampaign = (payload: {
+  agentId: string;
+  leadIds: string[];
+  campaignName?: string;
+}) =>
+  apiFetch("/calls/campaigns", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, "core");
+
+export const stopCampaign = (campaignId: string) =>
+  apiFetch("/calls/campaigns/stop", {
+    method: "POST",
+    body: JSON.stringify({ campaignId }),
+  }, "core");
+
+export const pauseCampaign = (campaignId: string) =>
+  apiFetch(`/calls/campaigns/${campaignId}/pause`, {
+    method: "POST",
+  }, "core");
+
+export const resumeCampaign = (campaignId: string) =>
+  apiFetch(`/calls/campaigns/${campaignId}/resume`, {
+    method: "POST",
+  }, "core");
+
 // ==============================
 // BILLING & USAGE APIs (CORE)
 // ==============================

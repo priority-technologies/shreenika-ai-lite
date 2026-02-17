@@ -57,11 +57,8 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
       const calls = callsResponse || [];
       const contacts = Array.isArray(contactsResponse) ? contactsResponse : (contactsResponse.contacts || []);
 
-      // Calculate meetings booked (calls with positive outcome)
+      // Calculate meetings booked (using AI-detected outcome field)
       const meetingsBooked = calls.filter((call: any) =>
-        call.summary?.toLowerCase().includes('scheduled') ||
-        call.summary?.toLowerCase().includes('book') ||
-        call.sentiment === 'Positive' ||
         call.outcome === 'meeting_booked'
       ).length;
 
@@ -73,7 +70,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
       setDashboardData({
         agentCount: Array.isArray(agents) ? agents.length : usageResponse.agentCount || 0,
         totalCalls: calls.length || logs.length,
-        meetingsBooked: meetingsBooked || logs.filter(l => l.sentiment === 'Positive').length,
+        meetingsBooked: meetingsBooked || logs.filter(l => l.outcome === 'meeting_booked').length,
         leadCount: contacts.length,
         voipNumberCount: voipNumbers.length,
         currentPlan: usageResponse.plan || 'Starter',
@@ -89,7 +86,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
       setDashboardData({
         agentCount: 0,
         totalCalls: logs.length,
-        meetingsBooked: logs.filter(l => l.sentiment === 'Positive').length,
+        meetingsBooked: logs.filter(l => l.outcome === 'meeting_booked').length,
         leadCount: 0,
         voipNumberCount: 0,
         currentPlan: 'Starter',
@@ -127,7 +124,7 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
 
           if (weekData[dayKey]) {
               weekData[dayKey].calls += 1;
-              if (log.summary?.toLowerCase().includes('scheduled') || log.summary?.toLowerCase().includes('book a meeting') || log.sentiment === 'Positive') {
+              if (log.outcome === 'meeting_booked') {
                   weekData[dayKey].meetings += 1;
               }
           }

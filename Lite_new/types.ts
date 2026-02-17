@@ -116,14 +116,37 @@ export interface CallLog {
   durationSeconds: number;
   startedAt: string;
   endedAt: string;
-  recordingUrl?: string; 
+  recordingUrl?: string;
   transcript?: string;
   summary?: string;
   sentiment?: 'Positive' | 'Neutral' | 'Negative' | 'Unknown';
+  outcome?: 'meeting_booked' | 'callback_requested' | 'not_interested' | 'voicemail' | null;
   usageCost?: string;
   rating?: number;
   endReason?: string;
   dialStatus?: string;
+}
+
+export type CampaignStatus = 'PENDING' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'FAILED';
+
+export interface Campaign {
+  _id: string;
+  name: string;
+  agentId: string;
+  userId?: string;
+  status: CampaignStatus;
+  leads?: string[];
+  totalLeads: number;
+  completedLeads?: number;
+  successfulCalls?: number;
+  failedCalls?: number;
+  missedCalls?: number;
+  noAnswerCalls?: number;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  averageDuration?: number;
+  totalDuration?: number;
 }
 
 export interface DashboardStats {
