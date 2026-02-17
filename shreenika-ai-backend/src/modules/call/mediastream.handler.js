@@ -10,6 +10,7 @@
 import { WebSocketServer } from 'ws';
 import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage } from './audio.converter.js';
 import { VoiceService } from './voice.service.js';
+import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
 import Call from './call.model.js';
 
 // Store active sessions
@@ -48,6 +49,8 @@ export const createMediaStreamServer = (httpServer) => {
 
     let streamSid = null;
     let voiceService = null;
+    let callControl = null;
+    let durationInterval = null;
     let isClosing = false;
 
     // Handle Twilio Media Stream messages
@@ -107,10 +110,32 @@ export const createMediaStreamServer = (httpServer) => {
               // Initialize the voice service (connects to Gemini)
               await voiceService.initialize();
 
+              // Initialize CallControl for duration and silence monitoring
+              callControl = await createCallControl(call._id, call.agentId);
+
+              // Start duration monitoring interval (check every 30 seconds)
+              durationInterval = setInterval(() => {
+                if (!callControl || !callControl.isActive) {
+                  clearInterval(durationInterval);
+                  return;
+                }
+                callControl.broadcastCallStatus();
+                if (callControl.isDurationExceeded()) {
+                  clearInterval(durationInterval);
+                  console.log(`⏱️ Max call duration exceeded, ending call`);
+                  callControl.endCall(call._id, 'max-duration-exceeded');
+                  if (!isClosing) {
+                    isClosing = true;
+                    ws.close();
+                  }
+                }
+              }, 30000);
+
               // Store session
               activeSessions.set(callSid, {
                 streamSid,
                 voiceService,
+                callControl,
                 ws,
                 startTime: Date.now()
               });
@@ -128,6 +153,21 @@ export const createMediaStreamServer = (httpServer) => {
             if (voiceService && message.media && message.media.payload) {
               // Convert Twilio audio to Gemini format
               const pcmBuffer = twilioToGemini(message.media.payload);
+
+              // Silence detection on each chunk (if CallControl enabled)
+              if (callControl) {
+                const audioLevel = analyzeAudioLevel(pcmBuffer);
+                const silenceResult = callControl.updateSilenceDetection(audioLevel);
+                if (silenceResult.silenceDetected) {
+                  console.log(`🔇 Silence detected, ending call`);
+                  callControl.endCall(call._id, 'silence-detected');
+                  if (!isClosing) {
+                    isClosing = true;
+                    ws.close();
+                  }
+                  break;
+                }
+              }
 
               // Send to Gemini Live
               voiceService.sendAudio(pcmBuffer);
@@ -156,6 +196,16 @@ export const createMediaStreamServer = (httpServer) => {
     // Handle WebSocket close
     ws.on('close', async () => {
       console.log(`🔌 Twilio Media Stream disconnected: ${callSid}`);
+
+      // Clean up duration monitoring
+      if (durationInterval) {
+        clearInterval(durationInterval);
+      }
+
+      // Clean up CallControl
+      if (callControl) {
+        callControl.isActive = false;
+      }
 
       if (voiceService) {
         await voiceService.close();

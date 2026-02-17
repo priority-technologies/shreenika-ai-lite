@@ -676,12 +676,12 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                        <div className="col-span-1">
                           <label className="block text-sm font-medium text-slate-700 mb-2">Language</label>
                           <div className="relative">
-                             <select 
+                             <select
                                value={localAgent.language}
                                onChange={(e) => handleChange('language', e.target.value)}
                                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white transition-shadow"
                              >
-                                {LANGUAGE_OPTIONS.map(lang => <option key={lang}>{lang}</option>)}
+                                {LANGUAGE_OPTIONS.map(lang => <option key={lang.code} value={lang.code}>{lang.label}</option>)}
                              </select>
                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                           </div>
@@ -840,8 +840,8 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                           <div>
                              <label className="block text-sm font-medium text-slate-700 mb-3">Voice Speed</label>
                              <div className="relative pt-1">
-                                <input 
-                                   type="range" min="0.5" max="2.0" step="0.25"
+                                <input
+                                   type="range" min="0.75" max="1.25" step="0.05"
                                    value={localAgent.voiceSpeed}
                                    onChange={(e) => handleChange('voiceSpeed', parseFloat(e.target.value))}
                                    className="w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600"

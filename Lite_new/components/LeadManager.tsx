@@ -10,6 +10,7 @@ const LeadManager: React.FC = () => {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [voipProviderType, setVoipProviderType] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newLead, setNewLead] = useState({
@@ -23,6 +24,23 @@ const LeadManager: React.FC = () => {
     address: "",
     website: ""
   });
+
+  /* =========================
+     LOAD VOIP PROVIDER (NEW)
+  ========================= */
+  useEffect(() => {
+    const fetchVoipProvider = async () => {
+      try {
+        const data = await apiFetch("/voip/provider");
+        setVoipProviderType(data?.provider || null);
+      } catch (err) {
+        console.error("Failed to fetch VOIP provider:", err);
+        setVoipProviderType(null);
+      }
+    };
+
+    fetchVoipProvider();
+  }, []);
 
   /* =========================
      LOAD CONTACTS (FIXED)
@@ -79,8 +97,11 @@ const LeadManager: React.FC = () => {
   const handleAddManualLead = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Store phone with country code in E.164 format
-    const fullPhone = newLead.countryCode + newLead.phone.replace(/[\s\-\(\)]/g, '');
+    // Conditional phone format based on VOIP provider
+    const isSansPBX = voipProviderType === 'SansPBX' || voipProviderType === 'Other';
+    const fullPhone = isSansPBX
+      ? newLead.phone.replace(/\D/g, '')                              // Raw 11-digit for SansPBX
+      : newLead.countryCode + newLead.phone.replace(/[\s\-\(\)]/g, ''); // E.164 for Twilio
 
     const payload = {
       firstName: newLead.firstName,
@@ -139,17 +160,28 @@ const LeadManager: React.FC = () => {
   ========================= */
   const handleEdit = (lead: Lead) => {
     setEditingLeadId(lead.id);
-    // Parse country code from stored phone (E.164 format like +1234567890)
-    let cc = "+1";
+    // Parse phone based on VOIP provider format
+    const isSansPBX = voipProviderType === 'SansPBX' || voipProviderType === 'Other';
+    let cc = "+91";
     let ph = lead.phone || "";
-    if (ph.startsWith("+")) {
-      // Try common country code lengths (1-3 digits after +)
-      const match = ph.match(/^(\+\d{1,3})(.*)/);
-      if (match) {
-        cc = match[1];
-        ph = match[2];
+
+    if (isSansPBX) {
+      // For SansPBX: stored as raw 0XXXXXXXXXX (11 digits), no country code extraction needed
+      cc = "+91"; // Not used for SansPBX, but keep for state shape
+      // ph is already raw 11-digit format
+    } else {
+      // For Twilio: parse country code from E.164 format like +1234567890
+      if (ph.startsWith("+")) {
+        const match = ph.match(/^(\+\d{1,3})(.*)/);
+        if (match) {
+          cc = match[1];
+          ph = match[2];
+        }
+      } else {
+        cc = "+1"; // Default to US if no + prefix
       }
     }
+
     setNewLead({
       firstName: lead.firstName,
       lastName: lead.lastName,
@@ -337,41 +369,59 @@ const LeadManager: React.FC = () => {
                 onChange={e => setNewLead({ ...newLead, email: e.target.value })}
               />
 
-              <div className="flex gap-2">
-                <select
-                  value={newLead.countryCode}
-                  onChange={e => setNewLead({ ...newLead, countryCode: e.target.value })}
-                  className="border rounded-lg p-2 w-28 bg-white text-sm"
-                >
-                  <option value="+1">+1 US</option>
-                  <option value="+44">+44 UK</option>
-                  <option value="+91">+91 IN</option>
-                  <option value="+61">+61 AU</option>
-                  <option value="+49">+49 DE</option>
-                  <option value="+33">+33 FR</option>
-                  <option value="+81">+81 JP</option>
-                  <option value="+86">+86 CN</option>
-                  <option value="+971">+971 UAE</option>
-                  <option value="+966">+966 SA</option>
-                  <option value="+65">+65 SG</option>
-                  <option value="+55">+55 BR</option>
-                  <option value="+52">+52 MX</option>
-                  <option value="+39">+39 IT</option>
-                  <option value="+34">+34 ES</option>
-                  <option value="+82">+82 KR</option>
-                  <option value="+31">+31 NL</option>
-                  <option value="+46">+46 SE</option>
-                  <option value="+41">+41 CH</option>
-                  <option value="+353">+353 IE</option>
-                </select>
-                <input
-                  required
-                  placeholder="Phone Number"
-                  className="flex-1 border rounded-lg p-2"
-                  value={newLead.phone}
-                  onChange={e => setNewLead({ ...newLead, phone: e.target.value })}
-                />
-              </div>
+              {(voipProviderType === 'SansPBX' || voipProviderType === 'Other') ? (
+                // SansPBX mode: 11-digit raw number, no country code
+                <div>
+                  <input
+                    required
+                    placeholder="Phone Number (11 digits, e.g. 09876543210)"
+                    maxLength={11}
+                    pattern="0[0-9]{10}"
+                    title="Must be 11 digits starting with 0"
+                    className="w-full border rounded-lg p-2"
+                    value={newLead.phone}
+                    onChange={e => setNewLead({ ...newLead, phone: e.target.value.replace(/\D/g, '') })}
+                  />
+                  <p className="text-xs text-slate-400 mt-1">Format: 0XXXXXXXXXX (11 digits, no country code)</p>
+                </div>
+              ) : (
+                // Twilio mode: country code + number in E.164 format
+                <div className="flex gap-2">
+                  <select
+                    value={newLead.countryCode}
+                    onChange={e => setNewLead({ ...newLead, countryCode: e.target.value })}
+                    className="border rounded-lg p-2 w-28 bg-white text-sm"
+                  >
+                    <option value="+1">+1 US</option>
+                    <option value="+44">+44 UK</option>
+                    <option value="+91">+91 IN</option>
+                    <option value="+61">+61 AU</option>
+                    <option value="+49">+49 DE</option>
+                    <option value="+33">+33 FR</option>
+                    <option value="+81">+81 JP</option>
+                    <option value="+86">+86 CN</option>
+                    <option value="+971">+971 UAE</option>
+                    <option value="+966">+966 SA</option>
+                    <option value="+65">+65 SG</option>
+                    <option value="+55">+55 BR</option>
+                    <option value="+52">+52 MX</option>
+                    <option value="+39">+39 IT</option>
+                    <option value="+34">+34 ES</option>
+                    <option value="+82">+82 KR</option>
+                    <option value="+31">+31 NL</option>
+                    <option value="+46">+46 SE</option>
+                    <option value="+41">+41 CH</option>
+                    <option value="+353">+353 IE</option>
+                  </select>
+                  <input
+                    required
+                    placeholder="Phone Number"
+                    className="flex-1 border rounded-lg p-2"
+                    value={newLead.phone}
+                    onChange={e => setNewLead({ ...newLead, phone: e.target.value })}
+                  />
+                </div>
+              )}
 
               <input 
                 required 
