@@ -108,6 +108,13 @@ const callSchema = new mongoose.Schema(
       enum: ["Positive", "Neutral", "Negative"]
     },
 
+    outcome: {
+      type: String,
+      enum: ["meeting_booked", "callback_requested", "not_interested", "voicemail", null],
+      default: null,
+      index: true
+    },
+
     rating: {
       type: Number,
       min: 0,

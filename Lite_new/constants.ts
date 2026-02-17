@@ -102,12 +102,13 @@ export const VOICE_OPTIONS = [
 ];
 
 export const LANGUAGE_OPTIONS = [
-  'English (US)',
-  'English (UK)',
-  'English (India)',
-  'Hindi (India)',
-  'Spanish',
-  'French'
+  { label: 'English (US)', code: 'en-US' },
+  { label: 'English (UK)', code: 'en-GB' },
+  { label: 'English (India)', code: 'en-IN' },
+  { label: 'Hindi (India)', code: 'hi-IN' },
+  { label: 'Hinglish', code: 'hinglish' },
+  { label: 'Spanish', code: 'es-US' },
+  { label: 'French', code: 'fr-FR' }
 ];
 
 export const NOISE_OPTIONS = ['Office', 'Quiet', 'Cafe', 'Street', 'Call Center'];

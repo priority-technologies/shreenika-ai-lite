@@ -39,6 +39,20 @@ const mapBackgroundNoise = (val) => {
   return map[val] || (val ? val.toLowerCase() : "office");
 };
 
+// Defensive language code mapping (handles legacy display-name values and new code values)
+const mapLanguageToCode = (val) => {
+  const map = {
+    'English (US)': 'en-US',
+    'English (UK)': 'en-GB',
+    'English (India)': 'en-IN',
+    'Hindi (India)': 'hi-IN',
+    'Hinglish': 'hinglish',
+    'Spanish': 'es-US',
+    'French': 'fr-FR'
+  };
+  return map[val] || val; // If already a code, return as-is
+};
+
 // Restructure flat frontend payload into nested backend schema
 const restructurePayload = (b) => {
   const data = {};
@@ -56,7 +70,7 @@ const restructurePayload = (b) => {
   if (b.voiceId !== undefined || b.language !== undefined) {
     data.voiceProfile = {};
     if (b.voiceId !== undefined) data.voiceProfile.voiceId = b.voiceId;
-    if (b.language !== undefined) data.voiceProfile.language = b.language;
+    if (b.language !== undefined) data.voiceProfile.language = mapLanguageToCode(b.language);
   }
 
   // Speech Settings (nested, with field name mapping)

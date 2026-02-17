@@ -20,7 +20,11 @@ const CHARACTERISTIC_MAPPING = {
   'Empathetic': { pitchOffset: 10, speedMultiplier: 0.90 },
   'Enthusiastic': { pitchOffset: 30, speedMultiplier: 1.15 },
   'Professional': { pitchOffset: 0, speedMultiplier: 1.0 },
-  'Helpful': { pitchOffset: 5, speedMultiplier: 0.98 }
+  'Helpful': { pitchOffset: 5, speedMultiplier: 0.98 },
+  'Assertive': { pitchOffset: 15, speedMultiplier: 1.05 },
+  'Humorous': { pitchOffset: 25, speedMultiplier: 1.10 },
+  'Calm': { pitchOffset: -10, speedMultiplier: 0.88 },
+  'Persuasive': { pitchOffset: 10, speedMultiplier: 1.02 }
 };
 
 /**
@@ -178,7 +182,11 @@ export class VoiceCustomizationService {
         'Empathetic': 'speak with understanding and emotional awareness',
         'Enthusiastic': 'speak with high energy and excitement',
         'Professional': 'speak with neutral professionalism',
-        'Helpful': 'speak clearly and solution-focused'
+        'Helpful': 'speak clearly and solution-focused',
+        'Assertive': 'speak with confidence and directness',
+        'Humorous': 'speak with light humor and wit',
+        'Calm': 'speak in a calm and reassuring manner',
+        'Persuasive': 'speak with persuasive and engaging language'
       };
 
       const descriptions = this.characteristics

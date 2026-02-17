@@ -34,8 +34,19 @@ export const GEMINI_VOICES = {
  * @returns {string} - Gemini voice name
  */
 export const mapAgentVoiceToGemini = (agentVoiceId) => {
-  // Map common voice IDs to Gemini voices
+  // Map voice IDs to Gemini voices (supports both new voice_N format and legacy display names)
   const voiceMap = {
+    // New voice_N IDs (primary)
+    'voice_1': GEMINI_VOICES.CHARON,      // en-IN Male Professional
+    'voice_2': GEMINI_VOICES.AOEDE,       // en-IN Female Professional
+    'voice_3': GEMINI_VOICES.PUCK,        // en-US Male Friendly
+    'voice_4': GEMINI_VOICES.KORE,        // en-US Female Friendly
+    'voice_5': GEMINI_VOICES.FENRIR,      // hi-IN Male Formal
+    'voice_6': GEMINI_VOICES.LEDA,        // hi-IN Female Warm
+    'voice_7': GEMINI_VOICES.ORUS,        // en-IN Male Young
+    'voice_8': GEMINI_VOICES.ZEPHYR,      // en-US Female Bold
+
+    // Legacy display name IDs (fallback for backward compatibility)
     'Monika (en-IN)': GEMINI_VOICES.AOEDE,
     'Rachel': GEMINI_VOICES.KORE,
     'Drew': GEMINI_VOICES.PUCK,
@@ -47,6 +58,44 @@ export const mapAgentVoiceToGemini = (agentVoiceId) => {
   };
 
   return voiceMap[agentVoiceId] || GEMINI_VOICES.AOEDE;
+};
+
+/**
+ * Build characteristics behavior with permutation/combination logic
+ * Applies multiple characteristics as intersecting behavioral constraints
+ * @param {Array} characteristics - Array of trait names (e.g., ['Professional', 'Empathetic'])
+ * @returns {string|null} - Behavioral instruction string, or null if no traits
+ */
+const buildCharacteristicsBehavior = (characteristics) => {
+  if (!characteristics || characteristics.length === 0) return null;
+
+  // Individual behavioral descriptors per characteristic
+  const BEHAVIOR_MAP = {
+    'Friendly':     'Use warm greetings, personal pronouns (I, you), and end sentences with inclusive phrases.',
+    'Empathetic':   'Acknowledge the listener\'s feelings before responding. Mirror emotional cues. Pause after difficult topics.',
+    'Enthusiastic': 'Use energetic openers, exclamatory sentences, and upward intonation on key points.',
+    'Professional': 'Maintain formal register. Avoid slang. Use precise language and complete sentences.',
+    'Helpful':      'Proactively offer solutions. Frame every response around what you can do, not what you cannot.',
+    'Assertive':    'State positions clearly and directly. Avoid hedging language like "maybe" or "perhaps".',
+    'Humorous':     'Incorporate light, appropriate humor naturally. Use wit without undermining professionalism.',
+    'Calm':         'Maintain steady pacing. Use de-escalating phrases. Never rush or raise urgency unnecessarily.',
+    'Persuasive':   'Build agreement incrementally. Use social proof and benefit-first framing.'
+  };
+
+  if (characteristics.length === 1) {
+    const single = BEHAVIOR_MAP[characteristics[0]];
+    return single ? `Behavioral style: ${single}` : null;
+  }
+
+  // Multi-characteristic combination: create a unified behavioral instruction
+  // that filters word choice and delivery through ALL selected lenses simultaneously
+  const behaviors = characteristics.map(c => BEHAVIOR_MAP[c]).filter(Boolean);
+  const traitList = characteristics.join(' + ');
+
+  return `Combined behavioral profile [${traitList}]:\n` +
+    `Every response must simultaneously satisfy ALL of the following:\n` +
+    behaviors.map((b, i) => `${i + 1}. ${b}`).join('\n') +
+    `\nNever let one trait cancel another - find the intersection where all traits coexist naturally.`;
 };
 
 /**
@@ -69,10 +118,11 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
   // 40% = Characteristics + Emotions
   // 60% = Speech Settings (voiceSpeed, responsiveness)
 
-  // Personality characteristics (40% weight)
+  // Personality characteristics with permutation/combination (40% weight)
   const characteristics = voiceConfig?.characteristics40?.traits || agent.characteristics || [];
-  if (characteristics.length > 0) {
-    parts.push(`Your personality traits are: ${characteristics.join(', ')}.`);
+  const characteristicsBehavior = buildCharacteristicsBehavior(characteristics);
+  if (characteristicsBehavior) {
+    parts.push(characteristicsBehavior);
   }
 
   // Emotion level from voiceConfig or agent settings (40% weight)
@@ -136,6 +186,23 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push('- Deliver with enthusiasm, energy, and warmth (higher pitch, faster pace)');
   } else if (emotionLevel < 0.3) {
     parts.push('- Deliver with calm, measured tone (lower pitch, slower pace, thoughtful pauses)');
+  }
+
+  // Background noise acoustic instructions
+  const backgroundNoise = voiceConfig?.speechSettings60?.backgroundNoise ||
+    agent.speechSettings?.backgroundNoise || 'office';
+
+  const NOISE_INSTRUCTIONS = {
+    'office':      'You are in a professional office environment. Speak in a measured, professional tone appropriate for a business setting.',
+    'quiet':       'You are in a quiet environment. Speak softly and clearly. Use minimal vocal filler. Allow comfortable silences.',
+    'cafe':        'You are in a cafe setting with ambient background noise. Speak with slightly elevated energy and clarity to cut through noise.',
+    'street':      'You are on the street with traffic and outdoor noise. Speak clearly and deliberately. Be patient with interruptions.',
+    'call-center': 'You are in a call center environment. Use a confident, service-oriented tone. Be clear and efficient.'
+  };
+
+  const noiseInstruction = NOISE_INSTRUCTIONS[backgroundNoise];
+  if (noiseInstruction) {
+    parts.push(`\nEnvironment: ${noiseInstruction}`);
   }
 
   // Custom prompt

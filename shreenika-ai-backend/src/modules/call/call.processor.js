@@ -153,8 +153,14 @@ Analyze this phone call transcript and return JSON:
 Return ONLY valid JSON (no markdown):
 {
   "summary": "1-2 sentence summary of the call",
-  "sentiment": "Positive" | "Neutral" | "Negative"
+  "sentiment": "Positive" | "Neutral" | "Negative",
+  "outcome": "meeting_booked" | "callback_requested" | "not_interested" | "voicemail" | null
 }
+
+Meeting booking indicators: "let's schedule", "calendar invite", "send you a meeting link", "next week/month", "set up a demo", "book a time", "confirm our appointment", "scheduled".
+Callback indicators: "call me back", "try again later", "I'll think about it", "get back to you".
+Not interested indicators: "not interested", "remove me from list", "don't call again", "we're good".
+Set null if none of these outcomes clearly apply.
 `;
 
     const result = await llm.generateContent(prompt);
@@ -166,8 +172,9 @@ Return ONLY valid JSON (no markdown):
 
     call.summary = parsed.summary;
     call.sentiment = parsed.sentiment;
+    call.outcome = parsed.outcome || null;
 
-    console.log(`✅ AI analysis complete: ${parsed.sentiment}`);
+    console.log(`✅ AI analysis complete: ${parsed.sentiment} | Outcome: ${parsed.outcome || 'none'}`);
 
   } catch (error) {
     console.error(`❌ AI analysis failed:`, error.message);
