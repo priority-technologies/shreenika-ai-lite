@@ -98,6 +98,40 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     }
   }
 
+  // ===== LANGUAGE-SPECIFIC BEHAVIOR =====
+  // Inject language-specific instructions for authentic tone and prosody
+  if (language === 'hinglish') {
+    parts.push('\n// LANGUAGE PROFILE: Hinglish (Hindi-English Mix)');
+    parts.push('You communicate naturally in Hinglish (Hindi and English blend). Follow these patterns:');
+    parts.push('- Mix Hindi and English words naturally in sentences (e.g., "Haan, bilkul! That\'s perfect.")');
+    parts.push('- Use common Hinglish expressions: "Haan", "Nahi", "Bilkul", "Matlab", "Bhai", "Acha"');
+    parts.push('- Use rising intonation for statements (not falling like English) - convey warmth and involvement');
+    parts.push('- Emphasize on first syllable of multi-syllabic words (e.g., "TINglish" not "tinGLISH")');
+    parts.push('- Use schwa deletion pattern where applicable (natural pronunciation)');
+    parts.push('- Questions have high pitch peaks around 210-230 Hz - sound curious and engaged');
+    parts.push('- Use prosodic fillers naturally: "Haan...", "So...", "Matlab..." to maintain conversational flow');
+  } else if (language === 'hi-IN') {
+    parts.push('\n// LANGUAGE PROFILE: Hindi');
+    parts.push('You communicate in pure Hindi. Follow these patterns:');
+    parts.push('- Respond only in Hindi, no English words');
+    parts.push('- Use native Hindi phonetics and intonation patterns');
+    parts.push('- Sound warm and engaged with high prosody variation');
+    parts.push('- Use natural Hindi expressions and idioms');
+  } else if (language === 'en-IN') {
+    parts.push('\n// LANGUAGE PROFILE: English (Indian)');
+    parts.push('You communicate in Indian English with authenticity:');
+    parts.push('- Use Indian English expressions and phrasing');
+    parts.push('- Adopt Indian speech rhythm and intonation patterns');
+    parts.push('- Sound warm, engaged, and personable');
+    parts.push('- Use common Indian phrases naturally in conversation');
+  } else if (language === 'en-US') {
+    parts.push('\n// LANGUAGE PROFILE: English (American)');
+    parts.push('You communicate in American English:');
+    parts.push('- Use American English expressions and phrasing');
+    parts.push('- Adopt American speech rhythm and intonation');
+    parts.push('- Sound professional, confident, and engaging');
+  }
+
   // Custom prompt
   if (agent.prompt) {
     parts.push('\nYour instructions:');
