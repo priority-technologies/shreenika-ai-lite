@@ -207,23 +207,42 @@ export class GeminiLiveSession extends EventEmitter {
     return new Promise((resolve, reject) => {
       let resolved = false;
       const url = `${GEMINI_LIVE_ENDPOINT}?key=${this.apiKey}`;
+      const connectionStartTime = Date.now();
 
-      console.log(`🔌 Gemini Live: Connecting to model=${this.model}, voice=${this.voice}`);
+      console.log(`\n🔌 GEMINI LIVE CONNECTION STARTING`);
+      console.log(`   ├─ Model: ${this.model}`);
+      console.log(`   ├─ Voice: ${this.voice}`);
+      console.log(`   ├─ API Key present: ${!!this.apiKey}`);
+      console.log(`   └─ Timestamp: ${new Date().toISOString()}\n`);
+
       this.ws = new WebSocket(url);
 
       this.ws.on('open', () => {
-        console.log('🔌 Gemini Live: WebSocket opened, sending setup...');
+        const elapsed = Date.now() - connectionStartTime;
+        console.log(`✅ WebSocket OPEN (${elapsed}ms)`);
         this.isConnected = true;
         this._sendSetup();
         // Do NOT resolve yet - wait for setupComplete
       });
 
       this.ws.on('message', (data) => {
+        const elapsed = Date.now() - connectionStartTime;
+        try {
+          const message = JSON.parse(data.toString());
+          if (message.setupComplete) {
+            console.log(`✅ SETUP COMPLETE received (${elapsed}ms from start)`);
+          }
+        } catch (e) {
+          // Silent - not all messages are JSON
+        }
         this._handleMessage(data);
       });
 
       this.ws.on('error', (error) => {
-        console.error('❌ Gemini Live: WebSocket error:', error.message);
+        const elapsed = Date.now() - connectionStartTime;
+        console.error(`❌ WebSocket ERROR (${elapsed}ms):`, error.message);
+        console.error(`   Code: ${error.code}`);
+        console.error(`   Details: ${JSON.stringify(error)}`);
         this.emit('error', error);
         if (!resolved) {
           resolved = true;
@@ -232,8 +251,9 @@ export class GeminiLiveSession extends EventEmitter {
       });
 
       this.ws.on('close', (code, reason) => {
+        const elapsed = Date.now() - connectionStartTime;
         const reasonStr = reason ? reason.toString() : 'unknown';
-        console.log(`🔌 Gemini Live: WebSocket closed: code=${code} reason=${reasonStr}`);
+        console.error(`❌ WebSocket CLOSED (${elapsed}ms): code=${code} reason=${reasonStr}`);
         this.isConnected = false;
         this.emit('close', { code, reason: reasonStr });
         if (!resolved) {
@@ -244,9 +264,10 @@ export class GeminiLiveSession extends EventEmitter {
 
       // Resolve when Gemini confirms session is ready (setupComplete received)
       this.on('ready', () => {
+        const elapsed = Date.now() - connectionStartTime;
         if (!resolved) {
           resolved = true;
-          console.log('✅ Gemini Live: Session fully ready, resolving connect()');
+          console.log(`✅ GEMINI LIVE: Session ready in ${elapsed}ms`);
           resolve();
         }
       });
@@ -255,8 +276,17 @@ export class GeminiLiveSession extends EventEmitter {
       setTimeout(() => {
         if (!resolved) {
           resolved = true;
-          const err = new Error('Gemini Live: Timeout waiting for session setup (15s). Check GOOGLE_API_KEY and model availability.');
-          console.error(`❌ ${err.message}`);
+          const elapsed = Date.now() - connectionStartTime;
+          const err = new Error(
+            `Gemini Live: TIMEOUT after ${elapsed}ms waiting for setupComplete.\n` +
+            `   Possible causes:\n` +
+            `   1. GOOGLE_API_KEY invalid or expired\n` +
+            `   2. Model ${this.model} not available in your region\n` +
+            `   3. API quota exceeded\n` +
+            `   4. Network connectivity issue\n` +
+            `   Check: gcloud auth application-default print-access-token`
+          );
+          console.error(`\n❌ ${err.message}\n`);
           this.close();
           reject(err);
         }

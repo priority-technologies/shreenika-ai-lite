@@ -38,12 +38,26 @@ export function getAllVoiceProfiles() {
 
 /**
  * Get a language profile by code
+ * Falls back to en-US if code not found instead of throwing error
  */
 export function getLanguageProfile(languageCode) {
-  if (!languageCode) return null;
+  if (!languageCode) {
+    console.warn('⚠️  No language code provided, defaulting to en-US');
+    return languageProfiles.languages.find((l) => l.code === 'en-US');
+  }
+
   const profile = languageProfiles.languages.find((l) => l.code === languageCode);
   if (!profile) {
-    throw new Error(`Language profile not found: ${languageCode}`);
+    // Try fallback: look up by display name (in case frontend sends name instead of code)
+    const nameMatch = languageProfiles.languages.find((l) => l.name === languageCode);
+    if (nameMatch) {
+      console.log(`ℹ️  Language matched by name: "${languageCode}" → "${nameMatch.code}"`);
+      return nameMatch;
+    }
+
+    // Last resort: default to en-US
+    console.warn(`⚠️  Language profile not found: "${languageCode}", defaulting to en-US`);
+    return languageProfiles.languages.find((l) => l.code === 'en-US');
   }
   return profile;
 }
@@ -185,18 +199,30 @@ export function getVoicesByDemographics(gender, ageGroup) {
 
 /**
  * Get STT language code from agent language
+ * Returns safe default en-US if language not found
  */
 export function getSTTLanguageCode(language) {
-  const langProfile = getLanguageProfile(language);
-  return langProfile?.sttLanguageCode || 'en-US';
+  try {
+    const langProfile = getLanguageProfile(language);
+    return langProfile?.sttLanguageCode || 'en-US';
+  } catch (error) {
+    console.warn('⚠️  Error getting STT language code, defaulting to en-US:', error.message);
+    return 'en-US';
+  }
 }
 
 /**
  * Get TTS language code from agent language
+ * Returns safe default en-US if language not found
  */
 export function getTTSLanguageCode(language) {
-  const langProfile = getLanguageProfile(language);
-  return langProfile?.ttsLanguageCode || 'en-US';
+  try {
+    const langProfile = getLanguageProfile(language);
+    return langProfile?.ttsLanguageCode || 'en-US';
+  } catch (error) {
+    console.warn('⚠️  Error getting TTS language code, defaulting to en-US:', error.message);
+    return 'en-US';
+  }
 }
 
 /**
@@ -291,25 +317,40 @@ export async function validateAgentForVoice(agent) {
 
 /**
  * Get voice configuration summary
+ * Uses safe defaults if voice or language profiles not found
  */
 export function getVoiceSummary(agent) {
   if (!agent) return null;
 
-  const voice = getVoiceProfile(agent.voiceProfile?.voiceId);
-  const language = getLanguageProfile(agent.voiceProfile?.language);
+  let voice = null;
+  let language = null;
+
+  try {
+    voice = getVoiceProfile(agent.voiceProfile?.voiceId);
+  } catch (error) {
+    console.warn('⚠️  Voice profile not found, using defaults:', error.message);
+    voice = { displayName: 'Default Voice', gender: 'neutral', characteristics: [] };
+  }
+
+  try {
+    language = getLanguageProfile(agent.voiceProfile?.language);
+  } catch (error) {
+    console.warn('⚠️  Language profile not found, using defaults:', error.message);
+    language = { code: 'en-US', name: 'English (USA)', priority: 4 };
+  }
 
   return {
     agent: agent.name,
     voice: {
       id: agent.voiceProfile?.voiceId,
-      displayName: voice?.displayName,
-      gender: voice?.gender,
-      characteristics: voice?.characteristics
+      displayName: voice?.displayName || 'Default Voice',
+      gender: voice?.gender || 'neutral',
+      characteristics: voice?.characteristics || []
     },
     language: {
-      code: language?.code,
-      name: language?.name,
-      priority: language?.priority
+      code: language?.code || 'en-US',
+      name: language?.name || 'English (USA)',
+      priority: language?.priority || 4
     },
     settings: {
       voiceSpeed: agent.speechSettings?.voiceSpeed || 1.0,

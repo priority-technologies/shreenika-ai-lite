@@ -97,13 +97,27 @@ export class VoiceService extends EventEmitter {
       }
 
       // Create Gemini Live session with voice customization
-      this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
+      try {
+        this.geminiSession = createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
+      } catch (err) {
+        console.error(`❌ Failed to create Gemini session:`, err.message);
+        throw new Error(`Gemini session creation failed: ${err.message}`);
+      }
 
       // Set up Gemini event handlers
       this._setupGeminiHandlers();
 
-      // Connect to Gemini Live API
-      await this.geminiSession.connect();
+      // Connect to Gemini Live API with timeout tracking
+      const connectStartTime = Date.now();
+      try {
+        await this.geminiSession.connect();
+        const connectDuration = Date.now() - connectStartTime;
+        console.log(`✅ Gemini Live connection established in ${connectDuration}ms`);
+      } catch (err) {
+        const connectDuration = Date.now() - connectStartTime;
+        console.error(`❌ Gemini Live connection failed after ${connectDuration}ms:`, err.message);
+        throw new Error(`Gemini Live connection failed: ${err.message}`);
+      }
 
       this.startTime = Date.now();
       console.log(`✅ Voice service ready for call: ${this.callId}`);
