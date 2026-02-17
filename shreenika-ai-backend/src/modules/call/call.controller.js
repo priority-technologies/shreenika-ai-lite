@@ -249,9 +249,37 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
       // Create VOIP provider instance
       const provider = ProviderFactory.createProvider(voipProvider);
 
+      // Convert phone number format based on provider
+      // Inputs: +918888888888 or 08888888888 or 8888888888
+      let phoneForProvider = lead.phone;
+
+      if (voipProvider.provider === 'Twilio') {
+        // Twilio needs E.164 format: +918888888888
+        if (!phoneForProvider.startsWith('+')) {
+          // If starts with 0 or just digits, add country code
+          if (phoneForProvider.startsWith('0')) {
+            phoneForProvider = '+91' + phoneForProvider.substring(1);
+          } else if (!phoneForProvider.startsWith('+91')) {
+            phoneForProvider = '+91' + phoneForProvider;
+          }
+        }
+        console.log(`   📞 Twilio format: ${lead.phone} → ${phoneForProvider}`);
+      }
+      else if (voipProvider.provider === 'SansPBX') {
+        // SansPBX needs 0-prefix format: 08888888888
+        if (phoneForProvider.startsWith('+91')) {
+          // Convert +918888888888 → 08888888888
+          phoneForProvider = '0' + phoneForProvider.substring(3);
+        } else if (!phoneForProvider.startsWith('0') && phoneForProvider.length === 10) {
+          // Convert 8888888888 → 08888888888
+          phoneForProvider = '0' + phoneForProvider;
+        }
+        console.log(`   📞 SansPBX format: ${lead.phone} → ${phoneForProvider}`);
+      }
+
       // Initiate call via VOIP
       const callResult = await provider.initiateCall({
-        toPhone: lead.phone,
+        toPhone: phoneForProvider,
         fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
         webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
         statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
@@ -910,8 +938,30 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
         const fromPhone = await getAgentPhoneNumber(agentId);
         const provider = ProviderFactory.createProvider(voipProvider);
 
+        // Convert phone number format based on provider
+        let phoneForProvider = lead.phone;
+
+        if (voipProvider.provider === 'Twilio') {
+          // Twilio needs E.164 format: +918888888888
+          if (!phoneForProvider.startsWith('+')) {
+            if (phoneForProvider.startsWith('0')) {
+              phoneForProvider = '+91' + phoneForProvider.substring(1);
+            } else if (!phoneForProvider.startsWith('+91')) {
+              phoneForProvider = '+91' + phoneForProvider;
+            }
+          }
+        }
+        else if (voipProvider.provider === 'SansPBX') {
+          // SansPBX needs 0-prefix format: 08888888888
+          if (phoneForProvider.startsWith('+91')) {
+            phoneForProvider = '0' + phoneForProvider.substring(3);
+          } else if (!phoneForProvider.startsWith('0') && phoneForProvider.length === 10) {
+            phoneForProvider = '0' + phoneForProvider;
+          }
+        }
+
         const callResult = await provider.initiateCall({
-          toPhone: lead.phone,
+          toPhone: phoneForProvider,
           fromPhone: fromPhone || process.env.TWILIO_FROM_NUMBER,
           webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
           statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
