@@ -262,8 +262,8 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
         }
       }
 
-      // Create VOIP provider instance
-      const provider = ProviderFactory.createProvider(voipProvider);
+      // Create VOIP provider instance (CRITICAL: must await async createProvider)
+      const provider = await ProviderFactory.createProvider(voipProvider);
 
       // Convert phone number format based on provider
       // Inputs: +918888888888 or 08888888888 or 8888888888
@@ -971,7 +971,7 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
           return;
         }
 
-        const provider = ProviderFactory.createProvider(voipProvider);
+        const provider = await ProviderFactory.createProvider(voipProvider);
 
         // Convert phone number format based on provider
         let phoneForProvider = lead.phone;
