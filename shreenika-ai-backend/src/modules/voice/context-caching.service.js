@@ -26,84 +26,101 @@
  */
 
 /**
- * HINGLISH VOCABULARY CONSTANT
- * 500+ common Indian business/sales phrases for dual benefit:
- * 1. Pads knowledge base to 32K token minimum (ensures caching activates)
- * 2. Genuinely improves response quality for Indian market
+ * MASTER KNOWLEDGE DOCUMENT LOADER
+ * 35,000+ tokens of Shreenika knowledge for 90% cost reduction
+ *
+ * This document includes:
+ * 1. Shreenika Core Brain (identity + behavioral rules)
+ * 2. Expanded Hinglish Vocabulary (500+ phrases)
+ * 3. Business FAQs (template for product-specific content)
+ * 4. Contextual Padding (Indian geography, business etiquette, cultural knowledge)
+ *
+ * Token count: 35,000-40,000 tokens (exceeds 32,768 minimum requirement)
+ * Cost impact: 90% discount on input tokens after first cache creation
  */
-const HINGLISH_VOCABULARY = `
+
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+let MASTER_KNOWLEDGE_DOCUMENT = null;
+
+/**
+ * Load Master Knowledge Document from file
+ * File must exist at: shreenika-ai-backend/src/masters/shreenika_master_cache.txt
+ */
+function loadMasterKnowledgeDocument() {
+  if (MASTER_KNOWLEDGE_DOCUMENT) {
+    return MASTER_KNOWLEDGE_DOCUMENT; // Cache in memory
+  }
+
+  try {
+    const mastFilePath = join(__dirname, '../../masters/shreenika_master_cache.txt');
+    MASTER_KNOWLEDGE_DOCUMENT = readFileSync(mastFilePath, 'utf-8');
+
+    const charCount = MASTER_KNOWLEDGE_DOCUMENT.length;
+    const estimatedTokens = Math.ceil(charCount / 4);
+
+    console.log(`✅ Master Knowledge Document loaded successfully`);
+    console.log(`   📊 Character count: ${charCount.toLocaleString()}`);
+    console.log(`   🎯 Estimated tokens: ${estimatedTokens.toLocaleString()} (${estimatedTokens >= 32768 ? '✅ EXCEEDS' : '⚠️  BELOW'} 32,768 minimum)`);
+
+    return MASTER_KNOWLEDGE_DOCUMENT;
+  } catch (error) {
+    console.warn(`⚠️  Master Knowledge Document not found at shreenika-ai-backend/src/masters/shreenika_master_cache.txt`);
+    console.warn(`   Using fallback Hinglish vocabulary. To enable 90% caching discount, provide the full Master Knowledge Document.`);
+    console.warn(`   Error: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Fallback HINGLISH VOCABULARY (Used only if Master Document not found)
+ * ~3,000 characters / ~750 tokens (insufficient for caching discount)
+ */
+const FALLBACK_HINGLISH_VOCABULARY = `
 === HINGLISH BUSINESS VOCABULARY & PHRASES ===
+[Fallback content - see Master Knowledge Document for full version]
 
 Common Greetings & Affirmations:
-- Acha ji / Bilkul sahi / Theek hai / Haan / Nahi / Maybe / Zaroor / No problem / One sec / Ek second please
+- Acha ji / Bilkul sahi / Theek hai / Haan / Nahi / Maybe / Zaroor / No problem
 - Kya bol rahe ho? / Samajh gaye? / Maloom hua? / Suno please / Suniye
-- Main baat kahta hoon / Listen carefully / Just one moment
 
 Sales Objections & Handling:
 - Bahut mehenga hai / Budget nahi hai / Funds available nahi hain
-- Pehle se arrangement hai / Already arranged / Pehle dekh lenge
 - Kab deliver karoge? / Kitne din lagenge? / Timeline kya hai?
 - Quality kaisa hai? / Guarantee denge? / Warranty ka kya?
-- Aur sasta nahi hai? / Discount mil sakta hai? / Special price possible?
-- Soch kar batata hoon / Socha sa lenge / Call back kar dunga
-- Apne vendor se pooch ta hoon / Let me check with boss / Manager se bat karunga
 
 Numbers, Money & Time:
 - Hazaar / Lakh / Crore / Rupaye / Rupee / Paisa / Thousands / Millions
 - Aaj / Kal / Parson / Agle haftey / Agle mahine / Agle quarter
-- Abhi / Abhi se / Thodi der mein / Baad mein / Later
 
-Common Customer Service Phrases:
+Customer Service Phrases:
 - Aapka naam? / Aapki company? / Aapka department? / Contact number?
-- Aap kaunse city mein ho? / Location kahaan hai?
 - Aapko kya chahiye? / Main kaise help kar sakta hoon?
-- Samajh gaye aapka problem / Problem clear hai / Issue samajh gaya
 - Solution available hai / Hum kar sakte hain / Arrangement ho sakta hai
-- Ek din mein / Char ghante mein / Direct deliver kar dunga
-- Free trial de dunga / Sample bhej dunga / Demo kar dunga
 
 Payment & Negotiation:
 - Advance paisa chahiye / Payment kaise hogi? / Installments possible?
-- 50-50 pay kar dena / Half advance, half on delivery
-- Cheque chalega? / Credit available hai? / EMI kar sakte ho?
-- Best price de dunga / Marginal profit lete hain / Barely breaking even
+- Best price de dunga / Marginal profit lete hain
 
 Follow-up & Commitment:
 - Kal morning call karunga / Subah 10 baje call kar dunga
-- Tomorrow morning guaranteed / Afternoon tak pata chal jaega
-- Confirm ho gaya / Noted kar liya / Record kar diya
 - SMS bhej dunga / Email kar dunga / WhatsApp message bhej dunga
 
 Closing Statements:
 - Deal ho gaya / Fixed ho gaya / Settled ho gaya
 - Perfect! Shukriya / Dhanyavaad / Thank you
-- Apna contact number likha lo / Mobile number likha?
-- Aapko best service dunga / 100% satisfied rahoge
-
-Technical Support Phrases:
-- System hang ho gaya / Network slow hai / Connection issue hai
-- Kya aap kabhi wapas call kar sakte ho? / Can you call later?
-- Login ID kya hai? / Password kya hai? / Account details?
-- Update kar diya / Fixed kar diya / Sorted kar diya
 
 Professional Courtesies:
 - Kripaya rukiye / Please hold / Just one moment
-- Aapki wait kar raha hoon / Aapka turn aa gaya
-- Dhanyavaad intezaar karne ke liye / Thanks for waiting
 - Happy to help / Hum yahan hain aapki help ke liye
 
-Exclamations & Emotions:
-- Wah! / Bilkul sahi! / Fantastic! / Excellent!
-- Arrey! / Oho! / Badhaai! / Congratulations!
-- Dil se khushi hui / Very happy / Bahut khush hoon
-
-Indian Slang:
-- Bhai / Yaar / Buddy / Boss / Sir / Madam
-- Meri taraf se best deal hai / Mujhse better koi nahi de sakta
-- Ek dum genuine / Bilkul original / 100% authentic
-- Jhooth bolne wala nahi hoon / I don't lie / Sachai bolata hoon
-
-=== END HINGLISH VOCABULARY ===
+=== NOTE: For full Hinglish vocabulary + geographical intelligence + business etiquette ===
+=== See: shreenika_master_cache.txt (35,000+ tokens) ===
 `;
 
 /**
@@ -231,7 +248,7 @@ export class ContextCachingService {
   }
 
   /**
-   * Build cache content: persona + knowledge + Hinglish vocabulary
+   * Build cache content: system instruction + knowledge docs + Master Knowledge Document
    * @private
    */
   _buildCacheContent(systemInstruction, knowledgeDocs) {
@@ -241,12 +258,12 @@ export class ContextCachingService {
     if (systemInstruction) {
       parts.push('=== SYSTEM INSTRUCTION ===\n');
       parts.push(systemInstruction);
-      parts.push('\n');
+      parts.push('\n\n');
     }
 
-    // 2. Knowledge Base
+    // 2. Knowledge Base (Agent-specific documents)
     if (knowledgeDocs && knowledgeDocs.length > 0) {
-      parts.push('\n=== KNOWLEDGE BASE ===\n');
+      parts.push('=== AGENT KNOWLEDGE BASE ===\n');
       for (const doc of knowledgeDocs) {
         const text = doc.rawText || doc.content || '';
         if (text) {
@@ -254,20 +271,32 @@ export class ContextCachingService {
           parts.push(text);
         }
       }
-      parts.push('\n=== END KNOWLEDGE BASE ===\n');
+      parts.push('\n=== END AGENT KNOWLEDGE BASE ===\n\n');
     }
 
-    // 3. Hinglish Vocabulary (padding + quality enhancement)
-    const currentContent = parts.join('');
-    const tokenCount = Math.ceil(currentContent.length / 4);
-    const minTokens = 32768;
-
-    if (tokenCount < minTokens) {
-      console.log(`📝 Content is ${tokenCount} tokens (need ${minTokens}). Adding Hinglish vocabulary padding...`);
-      parts.push(HINGLISH_VOCABULARY);
+    // 3. Master Knowledge Document (35,000+ tokens)
+    // Includes: Shreenika core brain + expanded Hinglish + business etiquette + geographical context
+    const masterDoc = loadMasterKnowledgeDocument();
+    if (masterDoc) {
+      parts.push('=== SHREENIKA MASTER KNOWLEDGE DOCUMENT ===\n');
+      parts.push(masterDoc);
+      parts.push('\n=== END MASTER KNOWLEDGE DOCUMENT ===\n');
+    } else {
+      // Fallback if Master Document not found
+      console.warn('⚠️  Master Knowledge Document not available, using fallback vocabulary');
+      parts.push(FALLBACK_HINGLISH_VOCABULARY);
     }
 
-    return parts.join('');
+    const finalContent = parts.join('');
+    const charCount = finalContent.length;
+    const tokenCount = Math.ceil(charCount / 4);
+
+    console.log(`📊 Cache content built:`);
+    console.log(`   ├─ Characters: ${charCount.toLocaleString()}`);
+    console.log(`   ├─ Estimated tokens: ${tokenCount.toLocaleString()}`);
+    console.log(`   └─ Status: ${tokenCount >= 32768 ? '✅ EXCEEDS 32,768 minimum' : '⚠️  BELOW 32,768 minimum'}`);
+
+    return finalContent;
   }
 
   /**
