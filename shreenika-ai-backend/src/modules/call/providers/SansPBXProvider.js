@@ -157,7 +157,7 @@ export class SansPBXProvider extends BaseProvider {
 
       console.log(`📞 SansPBX: Initiating call`);
       console.log(`   Input - To: ${toPhone}, From: ${fromPhone}`);
-      console.log(`   Formatted - To: ${normalizedTo} (destination - 10 digits only)`);
+      console.log(`   Formatted - To: ${normalizedTo} (destination - 11 digits with 0 prefix)`);
       console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
       const payload = {
