@@ -195,10 +195,11 @@ export const createMediaStreamServer = (httpServer) => {
               }
 
               // ✅ VAD (Voice Activity Detection): Skip silent frames
+              // TEMPORARILY DISABLED FOR TESTING - VAD threshold too aggressive
               // Reduces Gemini billing by ~30% (silence doesn't need AI processing)
-              if (!isVoiceActive(pcmBuffer)) {
-                // Silence detected - skip this chunk (saves ~$0.3/min on silence)
-                return;
+              // if (!isVoiceActive(pcmBuffer)) {
+              //   // Silence detected - skip this chunk (saves ~$0.3/min on silence)
+              //   return;
               }
 
               // Send to Gemini Live

@@ -104,11 +104,12 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
           const browserSampleRate = message.sampleRate || 48000;
 
           // ✅ VAD (Voice Activity Detection): Skip silent frames
+          // TEMPORARILY DISABLED FOR TESTING - VAD threshold too aggressive
           // Reduces Gemini billing by ~30% (silence doesn't need AI processing)
-          if (!isVoiceActive(browserAudio)) {
-            // Silence detected - skip this chunk (saves ~$0.3/min on silence)
-            return;
-          }
+          // if (!isVoiceActive(browserAudio)) {
+          //   // Silence detected - skip this chunk (saves ~$0.3/min on silence)
+          //   return;
+          // }
 
           // Resample from browser format (48kHz) to Gemini format (16kHz)
           const geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
