@@ -1,5 +1,6 @@
 import Call from "./call.model.js";
 import Lead from "../lead/lead.model.js";
+import Contact from "../contacts/contact.model.js";
 import Usage from "../usage/usage.model.js";
 import Campaign from "./campaign.model.js";
 import CallLog from "./callLog.model.js";
@@ -201,11 +202,17 @@ async function processCampaignBatches(campaignId, leadIds, agentId, userId) {
  */
 async function processSingleCall(campaignId, leadId, agentId, userId, callTimeout, maxRetries = 2) {
   const campaign = await Campaign.findById(campaignId);
-  const lead = await Lead.findById(leadId);
   const agent = await Agent.findById(agentId);
 
+  // CRITICAL FIX (2026-02-18): Search in both Contact and Lead collections
+  // Frontend may send either Contact IDs or Lead IDs
+  let lead = await Lead.findById(leadId);
   if (!lead) {
-    console.warn(`   ⚠️ Lead not found: ${leadId}`);
+    lead = await Contact.findById(leadId);
+  }
+
+  if (!lead) {
+    console.warn(`   ⚠️ Lead/Contact not found: ${leadId}`);
     return;
   }
 
