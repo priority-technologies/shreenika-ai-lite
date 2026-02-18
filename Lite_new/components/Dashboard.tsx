@@ -42,20 +42,35 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
     setError(null);
 
     try {
-      // Fetch all data in parallel
+      // Fetch all data in parallel with detailed error logging
       const [agentsResponse, usageResponse, voipResponse, callsResponse, contactsResponse] = await Promise.all([
-        getAgents().catch(() => ({ agents: [] })),
-        getCurrentUsage().catch(() => ({ agentCount: 0, voiceMinutes: 0, limits: { agents: 1 }, plan: 'Starter' })),
-        getVoipNumbers().catch(() => ({ numbers: [] })),
-        getCalls().catch(() => []),
-        getContacts().catch(() => ({ contacts: [] }))
+        getAgents().catch((err) => {
+          console.error('❌ getAgents failed:', err);
+          return [];  // Return array directly, not object
+        }),
+        getCurrentUsage().catch((err) => {
+          console.error('❌ getCurrentUsage failed:', err);
+          return { voiceMinutes: 0, agentCount: 0, limits: { agents: 1 }, plan: 'Starter' };
+        }),
+        getVoipNumbers().catch((err) => {
+          console.error('❌ getVoipNumbers failed:', err);
+          return { numbers: [] };
+        }),
+        getCalls().catch((err) => {
+          console.error('❌ getCalls failed:', err);
+          return [];
+        }),
+        getContacts().catch((err) => {
+          console.error('❌ getContacts failed:', err);
+          return [];
+        })
       ]);
 
-      // Extract data
-      const agents = agentsResponse.agents || agentsResponse || [];
-      const voipNumbers = voipResponse.numbers || [];
-      const calls = callsResponse || [];
-      const contacts = Array.isArray(contactsResponse) ? contactsResponse : (contactsResponse.contacts || []);
+      // Extract data (handle both array and object responses)
+      const agents = Array.isArray(agentsResponse) ? agentsResponse : (agentsResponse?.agents || []);
+      const voipNumbers = Array.isArray(voipResponse) ? voipResponse : (voipResponse?.numbers || []);
+      const calls = Array.isArray(callsResponse) ? callsResponse : [];
+      const contacts = Array.isArray(contactsResponse) ? contactsResponse : (contactsResponse?.contacts || []);
 
       // Calculate meetings booked (using AI-detected outcome field)
       const meetingsBooked = calls.filter((call: any) =>
@@ -79,12 +94,12 @@ const Dashboard: React.FC<DashboardProps> = ({ logs, leadCount }) => {
       });
 
     } catch (err: any) {
-      console.error('Failed to load dashboard data:', err);
-      setError(err.message || 'Failed to load dashboard data');
+      console.error('❌ Dashboard data loading error:', err.message);
+      setError('Some data couldn\'t be loaded. Showing available data.');
 
-      // Set fallback data from props
+      // Set fallback data from props (use props to show whatever was loaded before)
       setDashboardData({
-        agentCount: 0,
+        agentCount: logs.length > 0 ? 1 : 0,  // Estimate from call logs
         totalCalls: logs.length,
         meetingsBooked: logs.filter(l => l.outcome === 'meeting_booked').length,
         leadCount: 0,
