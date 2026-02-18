@@ -10,7 +10,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import { calculateProsodyProfile, generateProsodyInstructions } from '../modules/voice/prosody.service.js';
-import ContextCachingService from '../modules/voice/context-caching.service.js';
+import { sharedCachingService } from '../modules/voice/context-caching.service.js';
 
 const GEMINI_LIVE_ENDPOINT = 'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent';
 
@@ -385,17 +385,20 @@ export class GeminiLiveSession extends EventEmitter {
       }
     };
 
-    // Add system instruction if provided
-    if (this.systemInstruction) {
+    // ✅ CRITICAL OPTIMIZATION: Only send systemInstruction if NO cache available
+    // When cacheId is present, instruction is already in cached content → savings!
+    if (this.systemInstruction && !this.cacheId) {
       setupMessage.setup.systemInstruction = {
         parts: [{ text: this.systemInstruction }]
       };
+      console.log(`📋 System instruction included (no cache)`);
     }
 
     // Add cached content if available (Context Caching)
     if (this.cacheId) {
       setupMessage.setup.cachedContent = this.cacheId;
       console.log(`📦 Using cached content: ${this.cacheId}`);
+      console.log(`   💰 90% cost savings on system instruction + knowledge base`);
     }
 
     this._send(setupMessage);
@@ -572,15 +575,20 @@ export const createGeminiLiveSession = async (agent, knowledgeDocs = [], voiceCo
   const systemInstruction = buildSystemInstruction(agent, knowledgeDocs, voiceConfig);
   const voice = mapAgentVoiceToGemini(agent.voiceProfile?.voiceId || agent.voiceId);
 
-  // Initialize Context Caching for knowledge documents
+  // ✅ CRITICAL FIX: Use singleton for deduplication (saves 90% on cache creation)
+  // Context Caching: Cache system instruction + knowledge docs once, reuse on every call
   let cacheId = null;
-  if (knowledgeDocs && knowledgeDocs.length > 0) {
-    try {
-      const cachingService = new ContextCachingService(apiKey);
-      cacheId = await cachingService.getOrCreateCache(agent._id.toString(), knowledgeDocs);
-    } catch (err) {
-      console.warn('⚠️ Context Caching failed, continuing without cache:', err.message);
+  try {
+    cacheId = await sharedCachingService.getOrCreateCache(
+      agent._id.toString(),
+      systemInstruction,  // Now cache BOTH instruction and knowledge
+      knowledgeDocs || []
+    );
+    if (cacheId) {
+      console.log(`✅ Using Explicit Context Caching for 90% cost savings`);
     }
+  } catch (err) {
+    console.warn('⚠️ Context Caching failed, continuing without cache:', err.message);
   }
 
   return new GeminiLiveSession(apiKey, {

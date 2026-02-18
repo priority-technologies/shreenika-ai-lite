@@ -18,6 +18,7 @@ import Call from './call.model.js';
 import Knowledge from '../knowledge/knowledge.model.js';
 import { createGeminiLiveSession } from '../../config/google.live.client.js';
 import { createVoiceCustomization } from '../voice/voice-customization.service.js';
+import { sharedCachingService } from '../voice/context-caching.service.js';
 import LatencyTracker from '../voice/latency-tracker.service.js';
 import { enhanceResponseForLatency } from '../voice/response-enhancer.service.js';
 import HedgeEngine from '../voice/hedge-engine.service.js';
@@ -394,6 +395,13 @@ export class VoiceService extends EventEmitter {
     if (this.isClosed) return;
 
     console.log(`🛑 Closing voice service for call: ${this.callId}`);
+
+    // ✅ CRITICAL: Refresh cache TTL to keep it warm 24/7
+    // Without this, cache expires after 60 min → full cost on next call
+    if (this.geminiSession?.cacheId) {
+      sharedCachingService.refreshTTL(this.geminiSession.cacheId)
+        .catch(err => console.warn('⚠️  Cache TTL refresh skipped (non-critical):', err.message));
+    }
 
     // Close Hedge Engine
     if (this.hedgeEngine) {
