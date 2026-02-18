@@ -272,16 +272,27 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
         console.log(`   📞 Twilio format: ${lead.phone} → ${phoneForProvider}`);
       }
       else if (voipProvider.provider === 'SansPBX') {
-        // SansPBX needs digits only (no leading 0, no country code)
-        // Examples: +918888888888 → 8888888888, 08888888888 → 8888888888, 8888888888 → 8888888888
+        // SansPBX tech team requirement: Remove 91/+91, then ADD 0 prefix
+        // Examples: +918888888888 → 08888888888, 918888888888 → 08888888888, 8888888888 → 08888888888
+
+        // Step 1: Remove +91 or 91 prefix if present
         if (phoneForProvider.startsWith('+91')) {
-          // Remove +91 from country code format → 8888888888
-          phoneForProvider = phoneForProvider.substring(3);
-        } else if (phoneForProvider.startsWith('0')) {
-          // Remove leading 0 from 0-prefix format → 8888888888
-          phoneForProvider = phoneForProvider.substring(1);
+          phoneForProvider = phoneForProvider.substring(3); // +918888888888 → 8888888888
+        } else if (phoneForProvider.startsWith('91') && phoneForProvider.length === 12) {
+          phoneForProvider = phoneForProvider.substring(2); // 918888888888 → 8888888888
         }
-        // Now phoneForProvider should be pure 10 digits like 8888888888
+
+        // Step 2: Remove leading 0 if present (to normalize)
+        if (phoneForProvider.startsWith('0')) {
+          phoneForProvider = phoneForProvider.substring(1); // 08888888888 → 8888888888
+        }
+
+        // Step 3: Add 0 prefix (SansPBX requirement)
+        if (!phoneForProvider.startsWith('0')) {
+          phoneForProvider = '0' + phoneForProvider; // 8888888888 → 08888888888
+        }
+
+        // Now phoneForProvider should be 0-prefixed 11 digits like 08888888888
         console.log(`   📞 SansPBX format: ${lead.phone} → ${phoneForProvider}`);
       }
 
@@ -966,16 +977,27 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
           }
         }
         else if (voipProvider.provider === 'SansPBX') {
-          // SansPBX needs digits only (no leading 0, no country code)
-          // Examples: +918888888888 → 8888888888, 08888888888 → 8888888888, 8888888888 → 8888888888
+          // SansPBX tech team requirement: Remove 91/+91, then ADD 0 prefix
+          // Examples: +918888888888 → 08888888888, 918888888888 → 08888888888, 8888888888 → 08888888888
+
+          // Step 1: Remove +91 or 91 prefix if present
           if (phoneForProvider.startsWith('+91')) {
-            // Remove +91 from country code format → 8888888888
-            phoneForProvider = phoneForProvider.substring(3);
-          } else if (phoneForProvider.startsWith('0')) {
-            // Remove leading 0 from 0-prefix format → 8888888888
-            phoneForProvider = phoneForProvider.substring(1);
+            phoneForProvider = phoneForProvider.substring(3); // +918888888888 → 8888888888
+          } else if (phoneForProvider.startsWith('91') && phoneForProvider.length === 12) {
+            phoneForProvider = phoneForProvider.substring(2); // 918888888888 → 8888888888
           }
-          // Now phoneForProvider should be pure 10 digits like 8888888888
+
+          // Step 2: Remove leading 0 if present (to normalize)
+          if (phoneForProvider.startsWith('0')) {
+            phoneForProvider = phoneForProvider.substring(1); // 08888888888 → 8888888888
+          }
+
+          // Step 3: Add 0 prefix (SansPBX requirement)
+          if (!phoneForProvider.startsWith('0')) {
+            phoneForProvider = '0' + phoneForProvider; // 8888888888 → 08888888888
+          }
+
+          // Now phoneForProvider should be 0-prefixed 11 digits like 08888888888
         }
 
         const callResult = await provider.initiateCall({

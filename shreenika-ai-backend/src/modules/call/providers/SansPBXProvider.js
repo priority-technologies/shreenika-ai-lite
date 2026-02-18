@@ -145,12 +145,14 @@ export class SansPBXProvider extends BaseProvider {
         console.warn(`   ⚠️  SansPBX: DID is only ${normalizedFrom.length} digits (expected 7). This may fail.`);
       }
 
-      // For call_to (toPhone): Use 10-digit format (no leading 0, no country code)
-      // Controller should pass 10 digits like 9876543210
-      // If it has leading 0, remove it
-      if (normalizedTo.startsWith('0') && normalizedTo.length === 11) {
-        normalizedTo = normalizedTo.substring(1);
-        console.log(`   ℹ️  SansPBX: Removed leading 0 from destination → ${normalizedTo}`);
+      // For call_to (toPhone): Use 11-digit format with 0 prefix (SansPBX requirement)
+      // Controller should pass 0-prefixed format like 08888888888
+      // Ensure it has leading 0
+      if (!normalizedTo.startsWith('0') && normalizedTo.length === 10) {
+        normalizedTo = '0' + normalizedTo;
+        console.log(`   ℹ️  SansPBX: Added 0 prefix to destination → ${normalizedTo}`);
+      } else if (normalizedTo.startsWith('0') && normalizedTo.length !== 11) {
+        console.warn(`   ⚠️  SansPBX: Destination has unexpected length: ${normalizedTo.length} (expected 11)`);
       }
 
       console.log(`📞 SansPBX: Initiating call`);
