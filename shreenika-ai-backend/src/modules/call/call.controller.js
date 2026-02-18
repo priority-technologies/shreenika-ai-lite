@@ -60,7 +60,7 @@ export const startCampaign = async (req, res) => {
     console.log(`   Name: ${campaign.name}`);
     console.log(`   Agent: ${agentId}`);
     console.log(`   Total Leads: ${leadIds.length}`);
-    console.log(`   Concurrent Calls: 5\n`);
+    console.log(`   Concurrent Calls: 3 (reduced from 5 for Gemini API stability)\n`);
 
     // Respond immediately (async processing)
     res.json({
@@ -90,7 +90,10 @@ export const startCampaign = async (req, res) => {
  * Process campaign leads in batches (5 concurrent calls)
  */
 async function processCampaignBatches(campaignId, leadIds, agentId, userId) {
-  const BATCH_SIZE = 5;
+  // CRITICAL FIX (2026-02-18): Reduced from 5 to 3 concurrent calls
+  // Reason: Gemini API rate limiting + timeout issues under high load
+  // With retry logic added, 3 concurrent calls are more reliable than 5
+  const BATCH_SIZE = 3;
   const CALL_TIMEOUT = 120000; // 2 minutes max wait for call to complete
   const MAX_RETRIES = 2;
 
@@ -112,9 +115,9 @@ async function processCampaignBatches(campaignId, leadIds, agentId, userId) {
 
       const batch = leadIds.slice(batchIndex, batchIndex + BATCH_SIZE);
 
-      console.log(`\n📦 Batch ${Math.floor(batchIndex / BATCH_SIZE) + 1}: Processing ${batch.length} calls concurrently...`);
+      console.log(`\n📦 Batch ${Math.floor(batchIndex / BATCH_SIZE) + 1}: Processing ${batch.length} calls concurrently (3 max for stability)...`);
 
-      // Process 5 calls in parallel
+      // Process 3 calls in parallel
       await Promise.all(
         batch.map(leadId =>
           processSingleCall(
@@ -908,10 +911,10 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
       status: { $in: ['INITIATED', 'DIALING', 'RINGING', 'ANSWERED'] }
     });
 
-    console.log(`[Campaign] ${campaignId}: ${activeCalls} active calls. Max concurrent: 5`);
+    console.log(`[Campaign] ${campaignId}: ${activeCalls} active calls. Max concurrent: 3`);
 
     // If we have room for more concurrent calls
-    if (activeCalls < 5) {
+    if (activeCalls < 3) {
       // Find next call that's not yet been attempted in this campaign
       // We track this by checking if call exists for the lead in this campaign
       const attemptedLeadIds = await Call.find({ campaignId }).select('leadId').lean();

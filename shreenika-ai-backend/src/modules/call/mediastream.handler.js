@@ -203,7 +203,28 @@ export const createMediaStreamServer = (httpServer) => {
               console.log(`✅ Voice service initialized for call: ${call._id}`);
 
             } catch (error) {
-              console.error(`❌ Failed to initialize voice service:`, error.message);
+              console.error(`\n❌ VOICE SERVICE INITIALIZATION FAILED`);
+              console.error(`   ├─ Call ID: ${call._id}`);
+              console.error(`   ├─ Call SID: ${twilioCallSid}`);
+              console.error(`   ├─ Error: ${error.message}`);
+              console.error(`   └─ Stack: ${error.stack}\n`);
+
+              // Update call status to FAILED so campaign knows not to wait
+              try {
+                const failedCall = await Call.findByIdAndUpdate(
+                  call._id,
+                  {
+                    status: 'FAILED',
+                    endedAt: new Date(),
+                    failureReason: `Voice service init failed: ${error.message}`
+                  },
+                  { new: true }
+                );
+                console.log(`📞 Call marked as FAILED:`, failedCall._id);
+              } catch (updateErr) {
+                console.error(`Failed to update call status:`, updateErr.message);
+              }
+
               ws.close();
             }
             break;

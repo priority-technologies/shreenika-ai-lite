@@ -129,16 +129,17 @@ export class VoiceService extends EventEmitter {
       // Set up Gemini event handlers
       this._setupGeminiHandlers();
 
-      // Connect to Gemini Live API with timeout tracking
+      // Connect to Gemini Live API with retry logic (3 attempts with exponential backoff)
+      // This fixes the issue where concurrent campaigns fail due to Gemini API timeouts
       const connectStartTime = Date.now();
       try {
-        await this.geminiSession.connect();
+        await this._connectToGeminiWithRetry(3, 10000); // 3 retries, 10 second timeout per attempt
         const connectDuration = Date.now() - connectStartTime;
         console.log(`✅ Gemini Live connection established in ${connectDuration}ms`);
       } catch (err) {
         const connectDuration = Date.now() - connectStartTime;
-        console.error(`❌ Gemini Live connection failed after ${connectDuration}ms:`, err.message);
-        throw new Error(`Gemini Live connection failed: ${err.message}`);
+        console.error(`❌ Gemini Live connection failed after ${connectDuration}ms (3 retries exhausted):`, err.message);
+        throw new Error(`Gemini Live connection failed after 3 retries: ${err.message}`);
       }
 
       this.startTime = Date.now();
@@ -149,6 +150,50 @@ export class VoiceService extends EventEmitter {
       this.emit('error', error);
       throw error;
     }
+  }
+
+  /**
+   * Connect to Gemini Live with retry logic (3 attempts)
+   * Fixes: Gemini API timeouts during high concurrency campaigns
+   * @param {number} maxRetries - Maximum retry attempts (default 3)
+   * @param {number} timeoutMs - Timeout per attempt in milliseconds (default 10000)
+   * @private
+   */
+  async _connectToGeminiWithRetry(maxRetries = 3, timeoutMs = 10000) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔌 Gemini connection attempt ${attempt}/${maxRetries} (timeout: ${timeoutMs}ms)...`);
+
+        // Create timeout promise
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Connection timeout after ${timeoutMs}ms`)), timeoutMs)
+        );
+
+        // Race against timeout
+        await Promise.race([
+          this.geminiSession.connect(),
+          timeoutPromise
+        ]);
+
+        console.log(`✅ Gemini connection successful on attempt ${attempt}`);
+        return; // Success
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Attempt ${attempt} failed: ${error.message}`);
+
+        if (attempt < maxRetries) {
+          // Exponential backoff: 1s, 2s, 3s
+          const waitTime = attempt * 1000;
+          console.log(`⏳ Waiting ${waitTime}ms before retry ${attempt + 1}...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    // All retries exhausted
+    throw lastError || new Error('Failed to connect to Gemini after all retries');
   }
 
   /**
