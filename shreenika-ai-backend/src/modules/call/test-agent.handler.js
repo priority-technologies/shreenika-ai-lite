@@ -104,12 +104,12 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
           const browserSampleRate = message.sampleRate || 48000;
 
           // ✅ VAD (Voice Activity Detection): Skip silent frames
-          // TEMPORARILY DISABLED FOR TESTING - VAD threshold too aggressive
           // Reduces Gemini billing by ~30% (silence doesn't need AI processing)
-          // if (!isVoiceActive(browserAudio)) {
-          //   // Silence detected - skip this chunk (saves ~$0.3/min on silence)
-          //   return;
-          // }
+          // Threshold lowered to 0.003 to avoid filtering actual speech
+          if (!isVoiceActive(browserAudio)) {
+            // Silence detected - skip this chunk (saves ~$0.3/min on silence)
+            return;
+          }
 
           // Resample from browser format (48kHz) to Gemini format (16kHz)
           const geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
@@ -243,7 +243,7 @@ function isVoiceActive(audioBuffer) {
   }
 
   const rms = Math.sqrt(sumSquares / samples);
-  const VOICE_THRESHOLD = 0.008; // ~1% of full scale amplitude
+  const VOICE_THRESHOLD = 0.003; // ~0.3% of full scale amplitude (lowered from 0.008 to catch actual speech)
 
   return rms > VOICE_THRESHOLD; // Voice active if RMS exceeds threshold
 }
