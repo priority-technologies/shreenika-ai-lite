@@ -12,6 +12,7 @@ import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage } from './audi
 import { VoiceService } from './voice.service.js';
 import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
 import Call from './call.model.js';
+import Agent from '../agent/agent.model.js';
 
 // Store active sessions
 const activeSessions = new Map();
@@ -106,7 +107,33 @@ export const createMediaStreamServer = (httpServer) => {
                 return;
               }
 
-              voiceService = new VoiceService(call._id, call.agentId);
+              // Load agent to get speech settings
+              const agent = await Agent.findById(call.agentId);
+
+              // Build voiceConfig from agent settings (40% characteristics + 60% speech settings)
+              let voiceConfig = null;
+              if (agent) {
+                voiceConfig = {
+                  characteristics40: {
+                    traits: agent.characteristics || [],
+                    emotions: agent.speechSettings?.emotions ?? 0.5
+                  },
+                  speechSettings60: {
+                    voiceSpeed: agent.speechSettings?.voiceSpeed ?? 1.0,
+                    responsiveness: agent.speechSettings?.responsiveness ?? 0.5,
+                    interruptionSensitivity: agent.speechSettings?.interruptionSensitivity ?? 0.5,
+                    backgroundNoise: agent.speechSettings?.backgroundNoise || 'office'
+                  }
+                };
+                console.log(`🎙️ Voice customization loaded for real call:`);
+                console.log(`   ├─ Characteristics: ${(voiceConfig.characteristics40.traits || []).join(', ') || 'none'}`);
+                console.log(`   ├─ Emotion Level: ${voiceConfig.characteristics40.emotions.toFixed(2)}`);
+                console.log(`   ├─ Voice Speed: ${voiceConfig.speechSettings60.voiceSpeed.toFixed(2)}x`);
+                console.log(`   ├─ Responsiveness: ${voiceConfig.speechSettings60.responsiveness.toFixed(2)}`);
+                console.log(`   └─ Background Noise: ${voiceConfig.speechSettings60.backgroundNoise}`);
+              }
+
+              voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
 
               // Set up event handlers
               voiceService.on('audio', (audioBuffer) => {
