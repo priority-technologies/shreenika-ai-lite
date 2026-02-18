@@ -107,30 +107,38 @@ export const createMediaStreamServer = (httpServer) => {
                 return;
               }
 
-              // Load agent to get speech settings
-              const agent = await Agent.findById(call.agentId);
-
-              // Build voiceConfig from agent settings (40% characteristics + 60% speech settings)
+              // Load agent to get speech settings (with timeout protection)
               let voiceConfig = null;
-              if (agent) {
-                voiceConfig = {
-                  characteristics40: {
-                    traits: agent.characteristics || [],
-                    emotions: agent.speechSettings?.emotions ?? 0.5
-                  },
-                  speechSettings60: {
-                    voiceSpeed: agent.speechSettings?.voiceSpeed ?? 1.0,
-                    responsiveness: agent.speechSettings?.responsiveness ?? 0.5,
-                    interruptionSensitivity: agent.speechSettings?.interruptionSensitivity ?? 0.5,
-                    backgroundNoise: agent.speechSettings?.backgroundNoise || 'office'
-                  }
-                };
-                console.log(`🎙️ Voice customization loaded for real call:`);
-                console.log(`   ├─ Characteristics: ${(voiceConfig.characteristics40.traits || []).join(', ') || 'none'}`);
-                console.log(`   ├─ Emotion Level: ${voiceConfig.characteristics40.emotions.toFixed(2)}`);
-                console.log(`   ├─ Voice Speed: ${voiceConfig.speechSettings60.voiceSpeed.toFixed(2)}x`);
-                console.log(`   ├─ Responsiveness: ${voiceConfig.speechSettings60.responsiveness.toFixed(2)}`);
-                console.log(`   └─ Background Noise: ${voiceConfig.speechSettings60.backgroundNoise}`);
+              try {
+                const loadAgentPromise = Agent.findById(call.agentId);
+                const timeoutPromise = new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('Agent load timeout')), 5000)
+                );
+                const agent = await Promise.race([loadAgentPromise, timeoutPromise]);
+
+                // Build voiceConfig from agent settings (40% characteristics + 60% speech settings)
+                if (agent && agent.speechSettings) {
+                  voiceConfig = {
+                    characteristics40: {
+                      traits: agent.characteristics || [],
+                      emotions: agent.speechSettings?.emotions ?? 0.5
+                    },
+                    speechSettings60: {
+                      voiceSpeed: agent.speechSettings?.voiceSpeed ?? 1.0,
+                      responsiveness: agent.speechSettings?.responsiveness ?? 0.5,
+                      interruptionSensitivity: agent.speechSettings?.interruptionSensitivity ?? 0.5,
+                      backgroundNoise: agent.speechSettings?.backgroundNoise || 'office'
+                    }
+                  };
+                  console.log(`🎙️ Voice customization loaded:`);
+                  console.log(`   ├─ Characteristics: ${(voiceConfig.characteristics40.traits || []).join(', ') || 'none'}`);
+                  console.log(`   ├─ Emotion Level: ${voiceConfig.characteristics40.emotions.toFixed(2)}`);
+                  console.log(`   ├─ Voice Speed: ${voiceConfig.speechSettings60.voiceSpeed.toFixed(2)}x`);
+                  console.log(`   └─ Background Noise: ${voiceConfig.speechSettings60.backgroundNoise}`);
+                }
+              } catch (agentError) {
+                console.warn(`⚠️ Could not load agent speech settings: ${agentError.message}, continuing without voiceConfig`);
+                // Continue without voiceConfig - don't break the call
               }
 
               voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
