@@ -242,8 +242,14 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
       }
 
       const fromPhone = await getAgentPhoneNumber(agentId);
-      if (!fromPhone && voipProvider.provider !== 'Twilio') {
-        throw new Error(`Agent ${agentId} has no phone number assigned`);
+      // CRITICAL: SansPBX MUST have a DID assigned - cannot use fallback
+      if (!fromPhone) {
+        if (voipProvider.provider === 'SansPBX') {
+          throw new Error(`CRITICAL: Agent ${agentId} is configured for SansPBX but has NO DID assigned. Please assign a DID in VOIP settings.`);
+        }
+        if (voipProvider.provider !== 'Twilio') {
+          throw new Error(`Agent ${agentId} has no phone number assigned for ${voipProvider.provider}`);
+        }
       }
 
       // Create VOIP provider instance
@@ -266,14 +272,16 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
         console.log(`   📞 Twilio format: ${lead.phone} → ${phoneForProvider}`);
       }
       else if (voipProvider.provider === 'SansPBX') {
-        // SansPBX needs 0-prefix format: 08888888888
+        // SansPBX needs digits only (no leading 0, no country code)
+        // Examples: +918888888888 → 8888888888, 08888888888 → 8888888888, 8888888888 → 8888888888
         if (phoneForProvider.startsWith('+91')) {
-          // Convert +918888888888 → 08888888888
-          phoneForProvider = '0' + phoneForProvider.substring(3);
-        } else if (!phoneForProvider.startsWith('0') && phoneForProvider.length === 10) {
-          // Convert 8888888888 → 08888888888
-          phoneForProvider = '0' + phoneForProvider;
+          // Remove +91 from country code format → 8888888888
+          phoneForProvider = phoneForProvider.substring(3);
+        } else if (phoneForProvider.startsWith('0')) {
+          // Remove leading 0 from 0-prefix format → 8888888888
+          phoneForProvider = phoneForProvider.substring(1);
         }
+        // Now phoneForProvider should be pure 10 digits like 8888888888
         console.log(`   📞 SansPBX format: ${lead.phone} → ${phoneForProvider}`);
       }
 
@@ -936,6 +944,12 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
         }
 
         const fromPhone = await getAgentPhoneNumber(agentId);
+        // CRITICAL: SansPBX MUST have a DID assigned
+        if (!fromPhone && voipProvider.provider === 'SansPBX') {
+          console.error(`[Campaign] CRITICAL: Agent ${agentId} is configured for SansPBX but has NO DID assigned`);
+          return;
+        }
+
         const provider = ProviderFactory.createProvider(voipProvider);
 
         // Convert phone number format based on provider
@@ -952,12 +966,16 @@ export const processCampaignNextCall = async (campaignId, agentId, userId) => {
           }
         }
         else if (voipProvider.provider === 'SansPBX') {
-          // SansPBX needs 0-prefix format: 08888888888
+          // SansPBX needs digits only (no leading 0, no country code)
+          // Examples: +918888888888 → 8888888888, 08888888888 → 8888888888, 8888888888 → 8888888888
           if (phoneForProvider.startsWith('+91')) {
-            phoneForProvider = '0' + phoneForProvider.substring(3);
-          } else if (!phoneForProvider.startsWith('0') && phoneForProvider.length === 10) {
-            phoneForProvider = '0' + phoneForProvider;
+            // Remove +91 from country code format → 8888888888
+            phoneForProvider = phoneForProvider.substring(3);
+          } else if (phoneForProvider.startsWith('0')) {
+            // Remove leading 0 from 0-prefix format → 8888888888
+            phoneForProvider = phoneForProvider.substring(1);
           }
+          // Now phoneForProvider should be pure 10 digits like 8888888888
         }
 
         const callResult = await provider.initiateCall({

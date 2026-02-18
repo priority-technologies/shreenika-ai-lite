@@ -123,13 +123,21 @@ export class SansPBXProvider extends BaseProvider {
       // SansPBX team confirmed format requirements (2026-02-17):
       // - caller_id (fromPhone/DID): 7-digit format ONLY (e.g., 6745647)
       //   No country codes, no prefixes, just 7 digits
-      // - call_to (toPhone): Accept as-is from controller (already cleaned)
+      // - call_to (toPhone): 10-digit format (e.g., 9876543210)
+      //   No leading 0, no country code prefix
 
       let normalizedFrom = fromPhone.replace(/[\D]/g, ''); // Remove all non-digits
       let normalizedTo = toPhone.replace(/[\D]/g, ''); // Remove all non-digits
 
-      // For caller_id (fromPhone/DID): Extract/enforce 7-digit format ONLY
-      // Examples: +911234567890 → 4567890, or 6745647 → 6745647, or 9876543210 → 6543210
+      // For caller_id (fromPhone/DID): Extract 7-digit format ONLY
+      // CRITICAL: If DID was stored with leading 0 (e.g., 08888888888), remove it first!
+      if (normalizedFrom.startsWith('0') && normalizedFrom.length === 11) {
+        // Remove leading 0: 08888888888 → 8888888888
+        normalizedFrom = normalizedFrom.substring(1);
+        console.log(`   ⚠️  SansPBX: Removed leading 0 from DID → ${normalizedFrom}`);
+      }
+
+      // Now extract last 7 from the 10-digit DID
       if (normalizedFrom.length > 7) {
         console.log(`   ⚠️  SansPBX: DID is ${normalizedFrom.length} digits, extracting last 7`);
         normalizedFrom = normalizedFrom.slice(-7);
@@ -137,13 +145,17 @@ export class SansPBXProvider extends BaseProvider {
         console.warn(`   ⚠️  SansPBX: DID is only ${normalizedFrom.length} digits (expected 7). This may fail.`);
       }
 
-      // For call_to (toPhone): Use as cleaned by controller (digits only)
-      // Controller removed formatting chars but NOT country codes
-      // This allows flexibility: 9876543210, 6745647, 919876543210, etc.
+      // For call_to (toPhone): Use 10-digit format (no leading 0, no country code)
+      // Controller should pass 10 digits like 9876543210
+      // If it has leading 0, remove it
+      if (normalizedTo.startsWith('0') && normalizedTo.length === 11) {
+        normalizedTo = normalizedTo.substring(1);
+        console.log(`   ℹ️  SansPBX: Removed leading 0 from destination → ${normalizedTo}`);
+      }
 
       console.log(`📞 SansPBX: Initiating call`);
       console.log(`   Input - To: ${toPhone}, From: ${fromPhone}`);
-      console.log(`   Formatted - To: ${normalizedTo} (destination - as-is from controller)`);
+      console.log(`   Formatted - To: ${normalizedTo} (destination - 10 digits only)`);
       console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
       const payload = {
