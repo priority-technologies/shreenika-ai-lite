@@ -45,6 +45,7 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
   const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isCampaignActive, setIsCampaignActive] = useState(false);
+  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
   const [campaignProgress, setCampaignProgress] = useState({ current: 0, total: 0 });
 
   // Context Menu State
@@ -115,7 +116,17 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
 
     socket.on('CAMPAIGN_PROGRESS', (data) => {
       console.log('📢 Campaign progress:', data);
-      setCampaignProgress(data.progress);
+      // Only update if campaign is still active
+      if (activeCampaignId && data.campaignId === activeCampaignId) {
+        setCampaignProgress(data.progress);
+
+        // Auto-hide band when all calls completed
+        if (data.progress.current >= data.progress.total && data.progress.total > 0) {
+          console.log('✅ Campaign completed! Auto-hiding band...');
+          setIsCampaignActive(false);
+          setActiveCampaignId(null);
+        }
+      }
     });
 
     // Cleanup on unmount
@@ -354,12 +365,19 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
       setIsCampaignActive(true);
       setCampaignProgress({ current: 0, total: leadsToCall.length });
 
-      // Use proper campaign API
-      await createCampaign({
+      // Use proper campaign API and capture campaign ID
+      const campaignResponse = await createCampaign({
         agentId: selectedAgentId,
         leadIds: Array.from(selectedLeadIds),
         campaignName: `Campaign ${new Date().toLocaleDateString()}`
       });
+
+      // Store the campaign ID for stop/pause actions
+      const newCampaignId = campaignResponse?.campaignId || campaignResponse?._id;
+      if (newCampaignId) {
+        setActiveCampaignId(newCampaignId);
+        console.log(`📱 Campaign started with ID: ${newCampaignId}`);
+      }
 
       setIsLeadModalOpen(false);
       setSelectedLeadIds(new Set());
@@ -373,6 +391,7 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
       console.error('Campaign start failed:', err);
       alert(err.message || 'Failed to start campaign');
       setIsCampaignActive(false);
+      setActiveCampaignId(null);
     }
   };
 
@@ -380,18 +399,27 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
      STOP CAMPAIGN
   ========================= */
   const handleStopCampaign = async () => {
+    if (!activeCampaignId) {
+      alert('No active campaign to stop');
+      return;
+    }
+
     try {
-      // Note: Backend needs campaignId, but we'll use the existing mechanism
-      // that tracks active campaigns on the frontend
-      await stopCampaignAPI('current'); // This would need to track active campaign ID
+      console.log(`🛑 Stopping campaign: ${activeCampaignId}`);
+      await stopCampaignAPI(activeCampaignId);
 
       setIsCampaignActive(false);
+      setActiveCampaignId(null);
       setCampaignProgress({ current: 0, total: 0 });
 
-      alert('Campaign stopped');
+      alert('Campaign stopped successfully');
 
-    } catch (err) {
+      // Reload call history
+      await loadCallHistory();
+
+    } catch (err: any) {
       console.error('Failed to stop campaign:', err);
+      alert(err.message || 'Failed to stop campaign');
     }
   };
 
