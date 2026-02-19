@@ -160,15 +160,22 @@ export class SansPBXProvider extends BaseProvider {
       console.log(`   Formatted - To: ${normalizedTo} (destination - 11 digits with 0 prefix)`);
       console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
+      // CRITICAL: Manager verification point
+      // appid determines what kind of call this is in SansPBX
+      // If appid is NOT WebSocket-enabled, no audio will stream even if webhook works
+      console.log(`\n⚠️ CRITICAL VERIFICATION POINT:`);
+      console.log(`   appid: ${this.credentials.appId || 6} (MUST be WebSocket-enabled in SansPBX admin)`);
+      console.log(`   Manager must verify: Is this appid configured for WebSocket/Media Streaming?`);
+
       const payload = {
         appid: this.credentials.appId || 6,
         call_to: normalizedTo,
         caller_id: normalizedFrom,
-        // CRITICAL FIX (2026-02-19): Move webhook URL to root level as answer_url
-        // Manager confirmed SansPBX expects answer_url at root, not in custom_field
-        // This tells SansPBX where to send the call for voice handling
-        answer_url: webhookUrl,
-        status_callback: statusCallbackUrl,
+        // CRITICAL FIX (2026-02-19): Per SansPBX documentation Page 1
+        // The parameter is "status_callback" at root level, NOT "answer_url"
+        // Manager confirmed: SansPBX is proprietary (not Twilio-compatible in naming)
+        // status_callback: URL where SansPBX sends call events + expects voice instructions
+        status_callback: webhookUrl,
         custom_field: {
           record_id: `call_${Date.now()}`
         }
@@ -349,8 +356,9 @@ export class SansPBXProvider extends BaseProvider {
   }
 
   /**
-   * Generate voice response - TwiML XML format (SansPBX is Twilio-compatible)
-   * CRITICAL FIX (2026-02-19): Manager confirmed SansPBX expects TwiML XML, not JSON
+   * Generate voice response for SansPBX
+   * Per SansPBX documentation: Supports both TwiML (XML) and JSON formats
+   * Manager guidance: Try TwiML first, fallback to JSON if needed
    */
   generateVoiceResponse({ callSid, publicBaseUrl }) {
     // SansPBX uses custom script if provided
@@ -358,9 +366,13 @@ export class SansPBXProvider extends BaseProvider {
       return this.providerConfig.customScript.replace('{{callSid}}', callSid);
     }
 
-    // SansPBX expects TwiML (Twilio XML format) for real-time voice streaming
     // Convert publicBaseUrl to wss:// for secure WebSocket
     const wsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+
+    // PRIMARY: Return TwiML (Twilio XML format)
+    // Many PBX systems support TwiML natively for WebSocket streaming
+    // FALLBACK: If this causes silence, switch to JSON format below
+    // Manager note: "If TwiML fails, be ready to switch to JSON connect_websocket object"
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -370,5 +382,13 @@ export class SansPBXProvider extends BaseProvider {
         </Stream>
     </Connect>
 </Response>`;
+
+    // FALLBACK JSON RESPONSE (if TwiML doesn't work):
+    // JSON format for Indian/proprietary PBX systems
+    // return JSON.stringify({
+    //   action: 'connect_websocket',
+    //   url: wsUrl + '/media-stream/' + callSid,
+    //   parameters: { callSid }
+    // });
   }
 }
