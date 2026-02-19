@@ -25,8 +25,8 @@ import voiceRoutes from "./modules/voice/voice.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import webhookRoutes from "./modules/webhook/webhook.routes.js";
-import { handleMediaStream } from "./modules/call/twilio.controller.js";
 import { handleTestAgentUpgrade } from "./modules/call/test-agent.handler.js";
+import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
 import { WebSocketServer } from "ws";
 
 /* =======================
@@ -197,27 +197,22 @@ app.use((err, req, res, next) => {
 });
 
 /* =======================
-   WEBSOCKET SERVER FOR MEDIA STREAMS (Twilio Voice)
+   WEBSOCKET SERVER FOR MEDIA STREAMS (Twilio Voice + Test Agent)
 ======================= */
-const wss = new WebSocketServer({ noServer: true });
+// Create media stream server with proper WebSocket handling
+const wss = createMediaStreamServer(httpServer);
 
+// Additional upgrade handler for test agent (separate from media streams)
 httpServer.on('upgrade', (req, res, head) => {
   // Handle test agent WebSocket upgrade (browser-based voice testing)
   if (req.url.startsWith('/test-agent/')) {
     const sessionId = req.url.split('/')[2];
-    wss.handleUpgrade(req, res, head, (ws) => {
+    const testWss = new WebSocketServer({ noServer: true });
+    testWss.handleUpgrade(req, res, head, (ws) => {
       handleTestAgentUpgrade(ws, req, sessionId);
     });
   }
-  // Handle media stream WebSocket upgrade
-  else if (req.url.startsWith('/media-stream/')) {
-    wss.handleUpgrade(req, res, head, (ws) => {
-      // Extract callSid from URL
-      const callSid = req.url.split('/').pop();
-      req.params = { callSid };
-      handleMediaStream(req, res, ws);
-    });
-  }
+  // Media stream upgrades are handled by the wss server created above
 });
 
 /* =======================
