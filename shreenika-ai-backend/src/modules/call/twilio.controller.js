@@ -418,10 +418,15 @@ export const handleMediaStream = async (req, res, ws) => {
     callSid = req.params.callSid;
     console.log(`🎤 Media Stream connected: ${callSid}`);
 
-    // Find call and agent
-    const call = await Call.findOne({ twilioCallSid: callSid });
+    // Find call and agent (CRITICAL FIX: Search by BOTH twilioCallSid AND providerCallId for Twilio+SansPBX support)
+    const call = await Call.findOne({
+      $or: [
+        { twilioCallSid: callSid },
+        { providerCallId: callSid }
+      ]
+    });
     if (!call) {
-      console.error(`❌ Call not found: ${callSid}`);
+      console.error(`❌ Call not found for any provider: ${callSid}`);
       ws.close(1000, 'Call not found');
       return;
     }
