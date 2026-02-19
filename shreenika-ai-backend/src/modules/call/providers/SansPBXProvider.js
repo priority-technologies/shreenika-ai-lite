@@ -160,28 +160,22 @@ export class SansPBXProvider extends BaseProvider {
       console.log(`   Formatted - To: ${normalizedTo} (destination - 11 digits with 0 prefix)`);
       console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
-      // CRITICAL: Manager verification point
-      // appid determines what kind of call this is in SansPBX
-      // If appid is NOT WebSocket-enabled, no audio will stream even if webhook works
-      console.log(`\n⚠️ CRITICAL VERIFICATION POINT:`);
-      console.log(`   appid: ${this.credentials.appId || 6} (MUST be WebSocket-enabled in SansPBX admin)`);
-      console.log(`   Manager must verify: Is this appid configured for WebSocket/Media Streaming?`);
-
-      // Build WebSocket URL for real-time audio streaming
-      const wsBaseUrl = webhookUrl.replace('/twilio/voice', '').replace('https://', 'wss://').replace('http://', 'ws://');
+      // Per SansPBX official API documentation, dial payload is simple:
+      // - appid: Application ID (determines how call is routed and handled)
+      // - call_to: Destination number to dial
+      // - caller_id: Caller ID (DID) to display to callee
+      // - status_callback: URL where SansPBX sends call status webhooks
+      // - custom_field: Custom data returned in webhook callbacks
+      //
+      // CRITICAL: The status_callback URL is where we receive ALL call events.
+      // We must handle BOTH initial call (disposition=ANSWER) and final call end.
+      // Audio streaming is configured via the appid in SansPBX admin panel.
 
       const payload = {
         appid: this.credentials.appId || 6,
         call_to: normalizedTo,
         caller_id: normalizedFrom,
-        // CRITICAL FIX (2026-02-20): SansPBX needs BOTH status callback AND audio streaming URL
-        // status_callback: POST-call status notification (call ended, duration, billing)
-        status_callback: webhookUrl,
-        // answer_url: Called when call is ANSWERED - returns voice instructions (connect_websocket)
-        // Without this, SansPBX doesn't know where to stream audio during the call
-        answer_url: webhookUrl,
-        // Direct WebSocket URL for AudioSocket streaming (SansPBX recfile shows "audiosocket" path)
-        ws_url: `${wsBaseUrl}/media-stream/${normalizedTo}-${Date.now()}`,
+        status_callback: webhookUrl,  // SansPBX will POST call events here
         custom_field: {
           record_id: `call_${Date.now()}`
         }
