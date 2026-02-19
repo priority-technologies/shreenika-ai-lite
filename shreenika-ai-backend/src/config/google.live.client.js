@@ -376,10 +376,10 @@ export class GeminiLiveSession extends EventEmitter {
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: {
-            // CRITICAL FIX (2026-02-19): SansPBX requires G.711 MULAW at 8kHz
-            // NOT 24kHz - Gemini Live must downsample to match narrowband phone systems
-            audioEncoding: 'MULAW',           // G.711 PCMU/PCMA codec (standard for VoIP)
-            sampleRateHertz: 8000,            // 8,000Hz (telephone standard)
+            // ✅ CRITICAL FIX (2026-02-20): Gemini Live API ONLY supports voiceConfig in speechConfig
+            // Invalid fields (audioEncoding, sampleRateHertz) cause code=1007 JSON validation errors
+            // Gemini outputs 24kHz PCM by default - audio conversion to 8kHz MULAW happens
+            // in mediastream.handler.js after receiving from Gemini
             voiceConfig: {
               prebuiltVoiceConfig: {
                 voiceName: this.voice
