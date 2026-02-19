@@ -67,10 +67,27 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
 
   const selectedLog = logs.find(l => l.id === selectedLogId) || null;
 
-  const filteredLogs = logs.filter(log => 
-    log.leadName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    log.phoneNumber?.includes(searchTerm)
-  );
+  const filteredLogs = logs.filter(log => {
+    // 1. SEARCH FILTER - match name or phone
+    const matchesSearch = !searchTerm ||
+      log.leadName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.phoneNumber?.includes(searchTerm);
+
+    // 2. STATUS FILTER
+    const matchesStatus = statusFilter === 'All' || log.status === statusFilter;
+
+    // 3. SENTIMENT FILTER (from AI-detected sentiment field)
+    const matchesSentiment = sentimentFilter === 'All' || log.sentiment === sentimentFilter;
+
+    return matchesSearch && matchesStatus && matchesSentiment;
+  }).sort((a, b) => {
+    // SORT - applied after filtering
+    if (sortOrder === 'latest') {
+      return new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime();
+    } else {
+      return new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
+    }
+  });
 
   // Socket.IO connection for real-time call updates
   useEffect(() => {
@@ -539,17 +556,65 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
           </button>
         </div>
 
-        {/* Search */}
-        <div className="p-3 border-b border-slate-100">
+        {/* Search & Filters */}
+        <div className="p-3 border-b border-slate-100 space-y-3">
+           {/* Search Box */}
            <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <input 
-                type="text" 
-                placeholder="Search history..."
+              <input
+                type="text"
+                placeholder="Search by name or phone..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)} 
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
               />
+           </div>
+
+           {/* Status Filter */}
+           <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-600">Status</label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="All">All</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="FAILED">Failed</option>
+                <option value="NO_ANSWER">No Answer</option>
+                <option value="INITIATED">Initiated</option>
+              </select>
+           </div>
+
+           {/* Sentiment & Sort */}
+           <div className="grid grid-cols-2 gap-2">
+              {/* Sentiment Filter */}
+              <div className="space-y-1">
+                 <label className="text-xs font-semibold text-slate-600">Sentiment</label>
+                 <select
+                   value={sentimentFilter}
+                   onChange={(e) => setSentimentFilter(e.target.value)}
+                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                 >
+                   <option value="All">All</option>
+                   <option value="Positive">Positive</option>
+                   <option value="Negative">Negative</option>
+                   <option value="Neutral">Neutral</option>
+                 </select>
+              </div>
+
+              {/* Sort Order */}
+              <div className="space-y-1">
+                 <label className="text-xs font-semibold text-slate-600">Sort</label>
+                 <select
+                   value={sortOrder}
+                   onChange={(e) => setSortOrder(e.target.value as 'latest' | 'oldest')}
+                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                 >
+                   <option value="latest">Latest First</option>
+                   <option value="oldest">Oldest First</option>
+                 </select>
+              </div>
            </div>
         </div>
 
