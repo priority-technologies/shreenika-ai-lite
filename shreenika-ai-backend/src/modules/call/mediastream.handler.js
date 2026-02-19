@@ -149,7 +149,16 @@ export const createMediaStreamServer = (httpServer) => {
                 // Continue without voiceConfig - don't break the call
               }
 
-              voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
+              // CRITICAL FIX (2026-02-19): Check if VoiceService was already pre-initialized
+              // in /twilio/voice endpoint (for SansPBX which sends audio immediately)
+              const existingSession = activeSessions.get(callSid);
+              if (existingSession && existingSession.voiceService) {
+                voiceService = existingSession.voiceService;
+                console.log(`✅ Using pre-initialized VoiceService for call: ${callSid}`);
+              } else {
+                voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
+                console.log(`🚀 Creating new VoiceService for call: ${callSid}`);
+              }
 
               // Set up event handlers
               voiceService.on('audio', (audioBuffer) => {
@@ -175,8 +184,13 @@ export const createMediaStreamServer = (httpServer) => {
                 }
               });
 
-              // Initialize the voice service (connects to Gemini)
-              await voiceService.initialize();
+              // Initialize the voice service (only if not already pre-initialized)
+              // CRITICAL FIX (2026-02-19): Pre-initialized VoiceService is already ready
+              if (!existingSession || !existingSession.voiceService) {
+                await voiceService.initialize();
+              } else {
+                console.log(`✅ VoiceService already initialized, skipping init`);
+              }
 
               // Initialize CallControl for duration and silence monitoring
               callControl = await createCallControl(call._id, call.agentId);

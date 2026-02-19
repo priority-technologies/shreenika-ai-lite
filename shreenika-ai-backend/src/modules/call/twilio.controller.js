@@ -331,6 +331,27 @@ export const twilioVoice = async (req, res) => {
       }
 
       console.log(`✅ /twilio/voice: Sending ${call.voipProvider} response (${voiceResponse.length} bytes)\n`);
+
+      // CRITICAL FIX (2026-02-19): Initialize VoiceService in the BACKGROUND
+      // For SansPBX, audio may arrive immediately after WebSocket connection,
+      // so we can't wait for the 'start' message. Pre-initialize VoiceService now.
+      console.log(`🚀 /twilio/voice: Pre-initializing VoiceService in background...`);
+      const { VoiceService } = await import('../call/voice.service.js');
+      const voiceService = new VoiceService(call._id, call.agentId, false, null);
+
+      // Start initialization in background (don't await - send response immediately)
+      voiceService.initialize()
+        .then(() => {
+          console.log(`✅ /twilio/voice: VoiceService pre-initialized for call: ${call._id}`);
+          // Store in activeSessions so mediastream handler can use it
+          const { activeSessions } = await import('./mediastream.handler.js');
+          activeSessions.set(actualCallSid, { voiceService, startTime: Date.now() });
+        })
+        .catch((err) => {
+          console.error(`❌ /twilio/voice: VoiceService pre-initialization failed: ${err.message}`);
+          // This will be caught again when WebSocket connects, so don't fail the HTTP response
+        });
+
       res.send(voiceResponse);
       return;
     } catch (providerError) {
