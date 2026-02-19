@@ -264,8 +264,9 @@ export class GeminiLiveSession extends EventEmitter {
     this.sessionId = null;
 
     // Audio configuration
-    this.inputSampleRate = 16000; // 16kHz PCM input
-    this.outputSampleRate = 24000; // 24kHz PCM output
+    // CRITICAL FIX (2026-02-19): SansPBX phone systems require 8kHz narrowband audio
+    this.inputSampleRate = 16000; // 16kHz PCM input (Gemini preference)
+    this.outputSampleRate = 8000;  // 8kHz MULAW output (SansPBX requirement - telephone standard)
   }
 
   /**
@@ -375,6 +376,10 @@ export class GeminiLiveSession extends EventEmitter {
         generationConfig: {
           responseModalities: ['AUDIO'],
           speechConfig: {
+            // CRITICAL FIX (2026-02-19): SansPBX requires G.711 MULAW at 8kHz
+            // NOT 24kHz - Gemini Live must downsample to match narrowband phone systems
+            audioEncoding: 'MULAW',           // G.711 PCMU/PCMA codec (standard for VoIP)
+            sampleRateHertz: 8000,            // 8,000Hz (telephone standard)
             voiceConfig: {
               prebuiltVoiceConfig: {
                 voiceName: this.voice
