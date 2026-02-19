@@ -164,9 +164,12 @@ export class SansPBXProvider extends BaseProvider {
         appid: this.credentials.appId || 6,
         call_to: normalizedTo,
         caller_id: normalizedFrom,
+        // CRITICAL FIX (2026-02-19): Move webhook URL to root level as answer_url
+        // Manager confirmed SansPBX expects answer_url at root, not in custom_field
+        // This tells SansPBX where to send the call for voice handling
+        answer_url: webhookUrl,
+        status_callback: statusCallbackUrl,
         custom_field: {
-          callback_url: webhookUrl,
-          status_callback: statusCallbackUrl,
           record_id: `call_${Date.now()}`
         }
       };
@@ -346,7 +349,8 @@ export class SansPBXProvider extends BaseProvider {
   }
 
   /**
-   * Generate voice response
+   * Generate voice response - TwiML XML format (SansPBX is Twilio-compatible)
+   * CRITICAL FIX (2026-02-19): Manager confirmed SansPBX expects TwiML XML, not JSON
    */
   generateVoiceResponse({ callSid, publicBaseUrl }) {
     // SansPBX uses custom script if provided
@@ -354,15 +358,17 @@ export class SansPBXProvider extends BaseProvider {
       return this.providerConfig.customScript.replace('{{callSid}}', callSid);
     }
 
-    // Default JSON response
-    return JSON.stringify({
-      actions: [
-        {
-          type: 'connect_websocket',
-          url: `${publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://')}/media-stream/${callSid}`,
-          parameters: { callSid }
-        }
-      ]
-    });
+    // SansPBX expects TwiML (Twilio XML format) for real-time voice streaming
+    // Convert publicBaseUrl to wss:// for secure WebSocket
+    const wsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Connect>
+        <Stream url="${wsUrl}/media-stream/${callSid}">
+            <Parameter name="callSid" value="${callSid}" />
+        </Stream>
+    </Connect>
+</Response>`;
   }
 }
