@@ -183,10 +183,30 @@ export const createMediaStreamServer = (httpServer) => {
 
               // Set up event handlers
               voiceService.on('audio', (audioBuffer) => {
-                // Convert Gemini audio to Twilio format and send
-                const base64Audio = geminiToTwilio(audioBuffer);
-                const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
-                ws.send(JSON.stringify(mediaMessage));
+                // CRITICAL FIX (2026-02-20): Send audio in provider-specific format
+                // SansPBX uses binary PCM (like it receives), NOT Twilio JSON format
+
+                try {
+                  if (call.voipProvider === 'SansPBX') {
+                    // SansPBX expects binary PCM audio, not JSON
+                    // Convert 24kHz PCM from Gemini → 8kHz MULAW → binary
+                    const mulawBuffer = geminiToTwilio(audioBuffer);
+
+                    // Send raw binary (NOT JSON)
+                    // SansPBX AudioSocket protocol: raw binary PCM/MULAW frames
+                    if (ws.readyState === ws.OPEN) {
+                      ws.send(mulawBuffer);  // ← Binary, not JSON
+                      console.log(`📤 SansPBX: Sent ${mulawBuffer.length} bytes of audio`);
+                    }
+                  } else {
+                    // Twilio expects JSON format with base64 audio
+                    const base64Audio = geminiToTwilio(audioBuffer);
+                    const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
+                    ws.send(JSON.stringify(mediaMessage));
+                  }
+                } catch (audioSendError) {
+                  console.error(`❌ Error sending audio back: ${audioSendError.message}`);
+                }
               });
 
               voiceService.on('text', (text, role) => {
