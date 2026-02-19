@@ -8,7 +8,7 @@
  */
 
 import { WebSocketServer } from 'ws';
-import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage, upsample8kTo16k } from './audio.converter.js';
+import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage, upsample8kTo16k, downsample24kTo8k, encodeMulawBuffer } from './audio.converter.js';
 import { VoiceService } from './voice.service.js';
 import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
 import Call from './call.model.js';
@@ -184,25 +184,31 @@ export const createMediaStreamServer = (httpServer) => {
               // Set up event handlers
               voiceService.on('audio', (audioBuffer) => {
                 // CRITICAL FIX (2026-02-20): Send audio in provider-specific format
-                // SansPBX uses binary PCM (like it receives), NOT Twilio JSON format
+                // SansPBX uses binary MULAW audio directly (not JSON, not base64)
+                // Twilio uses JSON with base64-encoded audio
 
                 try {
                   if (call.voipProvider === 'SansPBX') {
-                    // SansPBX expects binary PCM audio, not JSON
-                    // Convert 24kHz PCM from Gemini → 8kHz MULAW → binary
-                    const mulawBuffer = geminiToTwilio(audioBuffer);
+                    // SansPBX AudioSocket expects raw binary MULAW audio
+                    // Convert: 24kHz PCM (Gemini) → 8kHz PCM → MULAW binary
 
-                    // Send raw binary (NOT JSON)
-                    // SansPBX AudioSocket protocol: raw binary PCM/MULAW frames
+                    // Downsample Gemini 24kHz to 8kHz (3:1 decimation)
+                    const pcm8k = downsample24kTo8k(audioBuffer);
+
+                    // Encode PCM to MULAW binary (SansPBX native format)
+                    const mulawBinary = encodeMulawBuffer(pcm8k);
+
+                    // Send raw MULAW binary (AudioSocket protocol)
                     if (ws.readyState === ws.OPEN) {
-                      ws.send(mulawBuffer);  // ← Binary, not JSON
-                      console.log(`📤 SansPBX: Sent ${mulawBuffer.length} bytes of audio`);
+                      ws.send(mulawBinary);
+                      console.log(`📤 SansPBX AudioSocket: Sent ${mulawBinary.length} bytes of MULAW audio`);
                     }
                   } else {
-                    // Twilio expects JSON format with base64 audio
+                    // Twilio Media Streams expects JSON with base64-encoded audio
                     const base64Audio = geminiToTwilio(audioBuffer);
                     const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
                     ws.send(JSON.stringify(mediaMessage));
+                    console.log(`📤 Twilio: Sent media frame with ${base64Audio.length} chars of base64 audio`);
                   }
                 } catch (audioSendError) {
                   console.error(`❌ Error sending audio back: ${audioSendError.message}`);
