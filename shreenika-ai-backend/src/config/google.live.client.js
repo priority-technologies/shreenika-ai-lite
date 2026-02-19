@@ -211,17 +211,42 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push(agent.prompt);
   }
 
-  // ===== KNOWLEDGE BASE (Via Context Caching) =====
-  // Knowledge documents are now handled via Context Caching Service
-  // instead of being injected into systemInstruction.
-  // This provides:
-  // - No character/token overhead in system prompt
-  // - 90% cost savings on cached tokens
-  // - Faster document retrieval from Google's cache
-  // - Support for documents up to 200K+ chars (vs 30K limit)
-  //
-  // The createGeminiLiveSession() factory will handle cache creation
-  // and pass cache_id to the WebSocket setup message.
+  // ===== KNOWLEDGE BASE =====
+  // Knowledge docs injected directly into system instruction as fallback
+  // Context Caching requires compatible models (not audio-preview)
+  // When caching works, knowledge is handled via cache. Otherwise, direct injection.
+  if (knowledgeDocs && knowledgeDocs.length > 0) {
+    parts.push('\n\n=== YOUR KNOWLEDGE BASE ===');
+    parts.push('Use this information to answer questions accurately:');
+    let totalKnowledgeChars = 0;
+    const MAX_KNOWLEDGE_CHARS = 25000; // Keep under Gemini's sweet spot
+    for (const doc of knowledgeDocs) {
+      const text = doc.rawText || doc.content || '';
+      if (text && totalKnowledgeChars + text.length < MAX_KNOWLEDGE_CHARS) {
+        parts.push(`\n[${doc.title || 'Document'}]`);
+        parts.push(text);
+        totalKnowledgeChars += text.length;
+      }
+    }
+    parts.push('\n=== END KNOWLEDGE BASE ===');
+  }
+
+  // ===== CALL START BEHAVIOR =====
+  const callStartBehavior = agent.callStartBehavior || 'waitForHuman';
+  parts.push('\n\nCRITICAL CALL BEHAVIOR:');
+  parts.push('This is a REAL PHONE CALL. You are speaking to a real person via telephone.');
+
+  if (callStartBehavior === 'waitForHuman') {
+    parts.push('IMPORTANT: DO NOT SPEAK IMMEDIATELY when the call connects.');
+    parts.push('WAIT for the human to speak first. They will say "Hello", "Hi", "Haan", or similar.');
+    parts.push('Only AFTER you hear the human speak, respond with a natural greeting.');
+    parts.push('Do NOT speak over ringing tones, connection sounds, or silence.');
+    parts.push('The human expects you to listen first, then respond.');
+  } else {
+    parts.push('Start speaking immediately when the call connects.');
+    parts.push('Greet the caller proactively without waiting for them to speak first.');
+    parts.push('Use a warm, confident opening like "Hello! This is ' + (agent.name || 'your assistant') + '."');
+  }
 
   // Call handling instructions
   parts.push('\n\nCall handling guidelines:');
@@ -264,9 +289,10 @@ export class GeminiLiveSession extends EventEmitter {
     this.sessionId = null;
 
     // Audio configuration
-    // CRITICAL FIX (2026-02-19): SansPBX phone systems require 8kHz narrowband audio
+    // Gemini Live outputs 24kHz PCM natively. Conversion to 8kHz MULAW
+    // for phone systems happens in audio.converter.js (geminiToTwilio function)
     this.inputSampleRate = 16000; // 16kHz PCM input (Gemini preference)
-    this.outputSampleRate = 8000;  // 8kHz MULAW output (SansPBX requirement - telephone standard)
+    this.outputSampleRate = 24000; // 24kHz PCM output (Gemini native, converted downstream)
   }
 
   /**

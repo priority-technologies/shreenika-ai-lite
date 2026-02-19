@@ -236,6 +236,33 @@ export const twilioVoice = async (req, res) => {
 
     const { CallSid, callid, call_id, id, api_call_id, Linkedid } = req.body;
 
+    // CRITICAL FIX (2026-02-20): Detect POST-CALL status notification from SansPBX
+    // If the webhook contains end_time/billsec/cause, the call has ALREADY ENDED
+    // Don't try to set up VoiceService for a finished call
+    if (req.body.end_time && req.body.billsec && req.body.cause_txt) {
+      console.log(`📋 /twilio/voice: POST-CALL status notification received (call already ended)`);
+      console.log(`   Duration: ${req.body.duration}s, Billed: ${req.body.billsec}s`);
+      console.log(`   Cause: ${req.body.cause_txt} (${req.body.cause})`);
+      console.log(`   Disposition: ${req.body.disposition}`);
+
+      // Update call record with final status
+      const postCallId = CallSid || callid || call_id || id || api_call_id || Linkedid;
+      if (postCallId) {
+        const call = await Call.findOne({
+          $or: [{ twilioCallSid: postCallId }, { providerCallId: postCallId }]
+        });
+        if (call) {
+          call.status = req.body.disposition === 'ANSWER' ? 'COMPLETED' : 'NO_ANSWER';
+          call.duration = parseInt(req.body.billsec) || 0;
+          call.endReason = req.body.cause_txt || 'Unknown';
+          if (req.body.recfile) call.recordingUrl = req.body.recfile;
+          await call.save();
+          console.log(`✅ Call record updated: ${call._id} → ${call.status} (${call.duration}s)`);
+        }
+      }
+      return res.status(200).json({ status: 'received' });
+    }
+
     // Try multiple possible field names - SansPBX uses "Linkedid"
     const actualCallSid = CallSid || callid || call_id || id || api_call_id || Linkedid;
 

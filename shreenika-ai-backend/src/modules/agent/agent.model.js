@@ -63,6 +63,14 @@ const AgentSchema = new mongoose.Schema(
       }
     },
 
+    // ===== CALL START BEHAVIOR =====
+    // Controls when the AI agent starts speaking on the call
+    callStartBehavior: {
+      type: String,
+      enum: ["waitForHuman", "startImmediately"],
+      default: "waitForHuman"
+    },
+
     // ===== CALL SETTINGS =====
     callSettings: {
       maxCallDuration: {

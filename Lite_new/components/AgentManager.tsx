@@ -258,6 +258,7 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
         characteristics: ['Helpful', 'Professional'],
         language: 'English',
         voiceId: 'voice_1', // Default to Adit voice
+        callStartBehavior: 'waitForHuman',
         maxCallDuration: 300,
         voicemailDetection: false,
         voicemailAction: 'Hang up',
@@ -706,6 +707,22 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
                              </select>
                              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                           </div>
+                       </div>
+
+                       <div className="col-span-1 md:col-span-2">
+                          <label className="block text-sm font-medium text-slate-700 mb-2">Call Start Behavior</label>
+                          <div className="relative">
+                             <select
+                               value={localAgent.callStartBehavior || 'waitForHuman'}
+                               onChange={(e) => handleChange('callStartBehavior', e.target.value)}
+                               className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none appearance-none bg-white transition-shadow"
+                             >
+                                <option value="waitForHuman">Wait for Human to Speak First</option>
+                                <option value="startImmediately">Start Speaking When Call is Picked</option>
+                             </select>
+                             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1">Controls when the AI agent starts speaking on the call</p>
                        </div>
 
                        <div className="col-span-1 md:col-span-2">

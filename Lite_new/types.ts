@@ -57,6 +57,7 @@ export interface AgentConfig {
   avatar?: string;
   language: string;
   voiceId: string;
+  callStartBehavior?: 'waitForHuman' | 'startImmediately';
   characteristics: string[];
   gender?: 'Male' | 'Female' | 'Neutral';
   age?: number;

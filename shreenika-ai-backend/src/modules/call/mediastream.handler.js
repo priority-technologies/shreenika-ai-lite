@@ -8,7 +8,7 @@
  */
 
 import { WebSocketServer } from 'ws';
-import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage } from './audio.converter.js';
+import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage, upsample8kTo16k } from './audio.converter.js';
 import { VoiceService } from './voice.service.js';
 import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
 import Call from './call.model.js';
@@ -83,6 +83,26 @@ export const createMediaStreamServer = (httpServer) => {
     // Handle Twilio Media Stream messages
     ws.on('message', async (data) => {
       try {
+        // CRITICAL FIX (2026-02-20): Handle binary audio from SansPBX AudioSocket
+        // SansPBX may send raw binary audio frames instead of Twilio's JSON format
+        if (Buffer.isBuffer(data) && data.length > 0) {
+          // Check if this is binary audio (not JSON)
+          const firstByte = data[0];
+          // JSON always starts with { (0x7B) or [ (0x5B)
+          if (firstByte !== 0x7B && firstByte !== 0x5B) {
+            // Binary audio from SansPBX AudioSocket
+            if (voiceService) {
+              // AudioSocket protocol: raw PCM 16-bit 8kHz mono
+              // Upsample to 16kHz for Gemini
+              const pcm16k = upsample8kTo16k(data);
+              if (isVoiceActive(pcm16k)) {
+                voiceService.sendAudio(pcm16k);
+              }
+            }
+            return;
+          }
+        }
+
         const message = JSON.parse(data.toString());
 
         switch (message.event) {
@@ -279,6 +299,7 @@ export const createMediaStreamServer = (httpServer) => {
               if (!isVoiceActive(pcmBuffer)) {
                 // Silence detected - skip this chunk (saves ~$0.3/min on silence)
                 return;
+              }
 
               // Send to Gemini Live
               voiceService.sendAudio(pcmBuffer);
