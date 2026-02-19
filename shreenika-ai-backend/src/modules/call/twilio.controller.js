@@ -258,8 +258,8 @@ export const twilioVoice = async (req, res) => {
     console.log(`   Provider: ${call.voipProvider}`);
 
     // CRITICAL FIX (2026-02-19): Use provider-specific response format
-    // Manager confirmed: Both Twilio AND SansPBX expect TwiML (XML), not JSON
-    // SansPBX is Twilio-compatible in terms of response format
+    // TwiML (XML) = Twilio only
+    // JSON = SansPBX (native proprietary format - NOT Twilio-compatible)
     try {
       // Get the agent and their VOIP provider to generate provider-specific response
       const agent = await Agent.findById(call.agentId);
@@ -273,15 +273,18 @@ export const twilioVoice = async (req, res) => {
             const provider = await ProviderFactory.createProvider(voipProvider);
             const voiceResponse = provider.generateVoiceResponse({ callSid: CallSid, publicBaseUrl });
 
-            // Set content type based on response format
-            // Both Twilio and SansPBX return TwiML (XML)
-            if (call.voipProvider === 'Twilio' || call.voipProvider === 'SansPBX') {
+            // Set content type based on provider
+            // Twilio: TwiML (XML)
+            // SansPBX: JSON (native proprietary format)
+            if (call.voipProvider === 'Twilio') {
               res.type("text/xml");
+            } else if (call.voipProvider === 'SansPBX') {
+              res.type("application/json");
             } else {
               res.type("application/json");
             }
 
-            console.log(`✅ Using ${call.voipProvider}-specific voice response format (TwiML XML)`);
+            console.log(`✅ Using ${call.voipProvider}-specific voice response format`);
             res.send(voiceResponse);
             return;
           } catch (providerCreateErr) {

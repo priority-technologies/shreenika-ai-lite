@@ -356,9 +356,9 @@ export class SansPBXProvider extends BaseProvider {
   }
 
   /**
-   * Generate voice response for SansPBX
-   * Per SansPBX documentation: Supports both TwiML (XML) and JSON formats
-   * Manager guidance: Try TwiML first, fallback to JSON if needed
+   * Generate voice response for SansPBX (JSON format - native to SansPBX)
+   * CRITICAL FIX (2026-02-19): User correctly identified TwiML is Twilio-specific
+   * SansPBX is proprietary → use native JSON format, NOT TwiML XML
    */
   generateVoiceResponse({ callSid, publicBaseUrl }) {
     // SansPBX uses custom script if provided
@@ -369,26 +369,12 @@ export class SansPBXProvider extends BaseProvider {
     // Convert publicBaseUrl to wss:// for secure WebSocket
     const wsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
 
-    // PRIMARY: Return TwiML (Twilio XML format)
-    // Many PBX systems support TwiML natively for WebSocket streaming
-    // FALLBACK: If this causes silence, switch to JSON format below
-    // Manager note: "If TwiML fails, be ready to switch to JSON connect_websocket object"
-
-    return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Connect>
-        <Stream url="${wsUrl}/media-stream/${callSid}">
-            <Parameter name="callSid" value="${callSid}" />
-        </Stream>
-    </Connect>
-</Response>`;
-
-    // FALLBACK JSON RESPONSE (if TwiML doesn't work):
-    // JSON format for Indian/proprietary PBX systems
-    // return JSON.stringify({
-    //   action: 'connect_websocket',
-    //   url: wsUrl + '/media-stream/' + callSid,
-    //   parameters: { callSid }
-    // });
+    // Return native SansPBX JSON format (NOT TwiML - TwiML is Twilio-specific)
+    // This tells SansPBX to connect the call to our WebSocket media-stream
+    return JSON.stringify({
+      action: 'connect_websocket',
+      url: `${wsUrl}/media-stream/${callSid}`,
+      parameters: { callSid }
+    });
   }
 }
