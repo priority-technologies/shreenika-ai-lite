@@ -260,46 +260,72 @@ export const twilioVoice = async (req, res) => {
     // CRITICAL FIX (2026-02-19): Use provider-specific response format
     // TwiML (XML) = Twilio only
     // JSON = SansPBX (native proprietary format - NOT Twilio-compatible)
+
+    // DIAGNOSTIC: Log every step to find where the fallback is happening
+    console.log(`\n📊 /twilio/voice DIAGNOSTIC - Tracing provider response generation...`);
+    console.log(`   CallSid: ${CallSid}`);
+    console.log(`   Call._id: ${call._id}`);
+    console.log(`   call.agentId: ${call.agentId}`);
+    console.log(`   call.voipProvider: ${call.voipProvider}`);
+
     try {
       // Get the agent and their VOIP provider to generate provider-specific response
+      console.log(`   Step 1: Loading agent...`);
       const agent = await Agent.findById(call.agentId);
-      if (agent) {
-        // Get the agent's VOIP provider
-        const voipProvider = await getAgentProviderOrFallback(call.agentId);
 
-        if (voipProvider) {
-          try {
-            // Create provider instance to get provider-specific response
-            const provider = await ProviderFactory.createProvider(voipProvider);
-            const voiceResponse = provider.generateVoiceResponse({ callSid: CallSid, publicBaseUrl });
-
-            // Set content type based on provider
-            // Twilio: TwiML (XML)
-            // SansPBX: JSON (native proprietary format)
-            if (call.voipProvider === 'Twilio') {
-              res.type("text/xml");
-            } else if (call.voipProvider === 'SansPBX') {
-              res.type("application/json");
-            } else {
-              res.type("application/json");
-            }
-
-            console.log(`✅ Using ${call.voipProvider}-specific voice response format`);
-            res.send(voiceResponse);
-            return;
-          } catch (providerCreateErr) {
-            console.warn(`⚠️ Could not instantiate provider: ${providerCreateErr.message}`);
-            // Fall through to default TwiML
-          }
-        }
+      if (!agent) {
+        console.error(`❌ STEP 1 FAILED: Agent not found for ID: ${call.agentId}`);
+        throw new Error(`Agent not found: ${call.agentId}`);
       }
+      console.log(`   ✅ Step 1 OK: Agent found (${agent.name})`);
+
+      // Get the agent's VOIP provider
+      console.log(`   Step 2: Getting agent's VOIP provider...`);
+      const voipProvider = await getAgentProviderOrFallback(call.agentId);
+
+      if (!voipProvider) {
+        console.error(`❌ STEP 2 FAILED: VOIP provider not found`);
+        throw new Error(`VOIP provider not found for agent`);
+      }
+      console.log(`   ✅ Step 2 OK: VOIP provider found (${voipProvider.provider})`);
+
+      console.log(`   Step 3: Creating provider instance...`);
+      // Create provider instance to get provider-specific response
+      const provider = await ProviderFactory.createProvider(voipProvider);
+      console.log(`   ✅ Step 3 OK: Provider instance created`);
+
+      console.log(`   Step 4: Generating voice response...`);
+      const voiceResponse = provider.generateVoiceResponse({ callSid: CallSid, publicBaseUrl });
+      console.log(`   ✅ Step 4 OK: Voice response generated (${voiceResponse.length} bytes)`);
+
+      // Set content type based on provider
+      // Twilio: TwiML (XML)
+      // SansPBX: JSON (native proprietary format)
+      if (call.voipProvider === 'Twilio') {
+        res.type("text/xml");
+        console.log(`   Content-Type: text/xml (Twilio TwiML)`);
+      } else if (call.voipProvider === 'SansPBX') {
+        res.type("application/json");
+        console.log(`   Content-Type: application/json (SansPBX native)`);
+      } else {
+        res.type("application/json");
+        console.log(`   Content-Type: application/json (default)`);
+      }
+
+      console.log(`✅ /twilio/voice: Sending ${call.voipProvider} response (${voiceResponse.length} bytes)\n`);
+      res.send(voiceResponse);
+      return;
     } catch (providerError) {
-      console.warn(`⚠️ Could not get provider: ${providerError.message}`);
+      console.error(`\n❌ /twilio/voice: PROVIDER LOOKUP FAILED`);
+      console.error(`   Error: ${providerError.message}`);
+      console.error(`   Stack: ${providerError.stack}\n`);
+      console.error(`   Falling back to default TwiML response\n`);
       // Fall through to default TwiML
     }
 
     // Fallback: Return TwiML with Media Stream for real-time AI conversation
     // The WebSocket URL must be wss:// for production
+    console.log(`⚠️ /twilio/voice: Using FALLBACK TwiML response (502 bytes)\n`);
     const wsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
 
     res.type("text/xml");
