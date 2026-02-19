@@ -227,20 +227,38 @@ export const twilioVoiceFallback = (_req, res) => {
  */
 export const twilioVoice = async (req, res) => {
   try {
-    const { CallSid } = req.body;
+    // CRITICAL DIAGNOSTIC (2026-02-19): Log entire webhook payload from provider
+    // SansPBX may send CallSid with different field name
+    console.log(`\n📥 /twilio/voice WEBHOOK RECEIVED from provider`);
+    console.log(`   Headers:`, JSON.stringify(req.headers, null, 2));
+    console.log(`   Body:`, JSON.stringify(req.body, null, 2));
+
+    const { CallSid, callid, call_id, id, api_call_id } = req.body;
+
+    // Try multiple possible field names SansPBX might use
+    const actualCallSid = CallSid || callid || call_id || id || api_call_id;
+
+    if (!actualCallSid) {
+      console.error(`❌ /twilio/voice: NO CALL ID FOUND in webhook payload!`);
+      console.error(`   Attempted to extract from: CallSid, callid, call_id, id, api_call_id`);
+      console.error(`   Available fields in req.body: ${Object.keys(req.body).join(', ')}`);
+      return twilioVoiceFallback(req, res);
+    }
+
+    console.log(`✅ /twilio/voice: Extracted call ID as: ${actualCallSid}`);
 
     // Find the call to get agent info
     // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
     // Twilio calls use twilioCallSid, but SansPBX calls use providerCallId
     const call = await Call.findOne({
       $or: [
-        { twilioCallSid: CallSid },
-        { providerCallId: CallSid }
+        { twilioCallSid: actualCallSid },
+        { providerCallId: actualCallSid }
       ]
     });
 
     if (!call) {
-      console.error(`❌ Call not found for SID: ${CallSid}`);
+      console.error(`❌ Call not found for SID: ${actualCallSid}`);
       console.error(`   Searched in both twilioCallSid and providerCallId fields`);
       // Fall back to static response
       return twilioVoiceFallback(req, res);
@@ -254,7 +272,7 @@ export const twilioVoice = async (req, res) => {
       return twilioVoiceFallback(req, res);
     }
 
-    console.log(`🎙️ Starting Media Stream for call: ${CallSid}`);
+    console.log(`🎙️ Starting Media Stream for call: ${actualCallSid}`);
     console.log(`   Provider: ${call.voipProvider}`);
 
     // CRITICAL FIX (2026-02-19): Use provider-specific response format
@@ -263,7 +281,7 @@ export const twilioVoice = async (req, res) => {
 
     // DIAGNOSTIC: Log every step to find where the fallback is happening
     console.log(`\n📊 /twilio/voice DIAGNOSTIC - Tracing provider response generation...`);
-    console.log(`   CallSid: ${CallSid}`);
+    console.log(`   actualCallSid: ${actualCallSid}`);
     console.log(`   Call._id: ${call._id}`);
     console.log(`   call.agentId: ${call.agentId}`);
     console.log(`   call.voipProvider: ${call.voipProvider}`);
@@ -295,7 +313,7 @@ export const twilioVoice = async (req, res) => {
       console.log(`   ✅ Step 3 OK: Provider instance created`);
 
       console.log(`   Step 4: Generating voice response...`);
-      const voiceResponse = provider.generateVoiceResponse({ callSid: CallSid, publicBaseUrl });
+      const voiceResponse = provider.generateVoiceResponse({ callSid: actualCallSid, publicBaseUrl });
       console.log(`   ✅ Step 4 OK: Voice response generated (${voiceResponse.length} bytes)`);
 
       // Set content type based on provider
