@@ -15,7 +15,8 @@ import Call from './call.model.js';
 import Agent from '../agent/agent.model.js';
 
 // Store active sessions
-const activeSessions = new Map();
+// CRITICAL FIX (2026-02-19): Export for use by twilio.controller.js pre-initialization
+export const activeSessions = new Map();
 
 /**
  * Voice Activity Detection (VAD) - Silence Detection for Real Calls

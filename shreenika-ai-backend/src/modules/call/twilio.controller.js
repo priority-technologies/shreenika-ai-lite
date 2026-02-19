@@ -8,6 +8,8 @@ import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAg
 import { VoicePipeline } from "../voice/voicePipeline.js";
 import { CallControlService, createCallControl } from "./call.control.service.js";
 import { createTTSService, shouldUseTTS } from "../voice/tts.service.js";
+import { VoiceService } from "./voice.service.js";
+import { activeSessions } from "./mediastream.handler.js";
 
 const getMonthKey = () => {
   const d = new Date();
@@ -336,7 +338,6 @@ export const twilioVoice = async (req, res) => {
       // For SansPBX, audio may arrive immediately after WebSocket connection,
       // so we can't wait for the 'start' message. Pre-initialize VoiceService now.
       console.log(`🚀 /twilio/voice: Pre-initializing VoiceService in background...`);
-      const { VoiceService } = await import('../call/voice.service.js');
       const voiceService = new VoiceService(call._id, call.agentId, false, null);
 
       // Start initialization in background (don't await - send response immediately)
@@ -344,7 +345,6 @@ export const twilioVoice = async (req, res) => {
         .then(() => {
           console.log(`✅ /twilio/voice: VoiceService pre-initialized for call: ${call._id}`);
           // Store in activeSessions so mediastream handler can use it
-          const { activeSessions } = await import('./mediastream.handler.js');
           activeSessions.set(actualCallSid, { voiceService, startTime: Date.now() });
         })
         .catch((err) => {
