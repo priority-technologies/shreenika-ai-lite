@@ -230,10 +230,18 @@ export const twilioVoice = async (req, res) => {
     const { CallSid } = req.body;
 
     // Find the call to get agent info
-    const call = await Call.findOne({ twilioCallSid: CallSid });
+    // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
+    // Twilio calls use twilioCallSid, but SansPBX calls use providerCallId
+    const call = await Call.findOne({
+      $or: [
+        { twilioCallSid: CallSid },
+        { providerCallId: CallSid }
+      ]
+    });
 
     if (!call) {
       console.error(`❌ Call not found for SID: ${CallSid}`);
+      console.error(`   Searched in both twilioCallSid and providerCallId fields`);
       // Fall back to static response
       return twilioVoiceFallback(req, res);
     }
@@ -246,11 +254,51 @@ export const twilioVoice = async (req, res) => {
       return twilioVoiceFallback(req, res);
     }
 
-    // Return TwiML with Media Stream for real-time AI conversation
+    console.log(`🎙️ Starting Media Stream for call: ${CallSid}`);
+    console.log(`   Provider: ${call.voipProvider}`);
+
+    // CRITICAL FIX (2026-02-19): Use provider-specific response format
+    // Each provider (Twilio, SansPBX, etc.) expects different formats
+    // - Twilio: TwiML (XML)
+    // - SansPBX: JSON with actions
+    // - Generic: JSON with actions
+    try {
+      // Get the agent and their VOIP provider to generate provider-specific response
+      const agent = await Agent.findById(call.agentId);
+      if (agent) {
+        // Get the agent's VOIP provider
+        const voipProvider = await getAgentProviderOrFallback(call.agentId);
+
+        if (voipProvider) {
+          try {
+            // Create provider instance to get provider-specific response
+            const provider = await ProviderFactory.createProvider(voipProvider);
+            const voiceResponse = provider.generateVoiceResponse({ callSid: CallSid, publicBaseUrl });
+
+            // Set content type based on provider
+            if (call.voipProvider === 'Twilio') {
+              res.type("text/xml");
+            } else {
+              res.type("application/json");
+            }
+
+            console.log(`✅ Using ${call.voipProvider}-specific voice response format`);
+            res.send(voiceResponse);
+            return;
+          } catch (providerCreateErr) {
+            console.warn(`⚠️ Could not instantiate provider: ${providerCreateErr.message}`);
+            // Fall through to default TwiML
+          }
+        }
+      }
+    } catch (providerError) {
+      console.warn(`⚠️ Could not get provider: ${providerError.message}`);
+      // Fall through to default TwiML
+    }
+
+    // Fallback: Return TwiML with Media Stream for real-time AI conversation
     // The WebSocket URL must be wss:// for production
     const wsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-
-    console.log(`🎙️ Starting Media Stream for call: ${CallSid}`);
 
     res.type("text/xml");
     res.send(`
@@ -284,7 +332,13 @@ export const twilioStatus = async (req, res) => {
       ErrorMessage
     } = req.body;
 
-    const call = await Call.findOne({ twilioCallSid: CallSid });
+    // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
+    const call = await Call.findOne({
+      $or: [
+        { twilioCallSid: CallSid },
+        { providerCallId: CallSid }
+      ]
+    });
     if (!call) return res.sendStatus(200);
 
     call.status = CallStatus.toUpperCase();
@@ -351,7 +405,13 @@ export const twilioAmdStatus = async (req, res) => {
   try {
     const { CallSid, AnsweredBy } = req.body;
 
-    const call = await Call.findOne({ twilioCallSid: CallSid });
+    // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
+    const call = await Call.findOne({
+      $or: [
+        { twilioCallSid: CallSid },
+        { providerCallId: CallSid }
+      ]
+    });
     if (!call) return res.sendStatus(200);
 
     if (AnsweredBy === 'machine_start') {
@@ -381,7 +441,13 @@ export const twilioRecordingStatus = async (req, res) => {
   try {
     const { RecordingUrl, CallSid } = req.body;
 
-    const call = await Call.findOne({ twilioCallSid: CallSid });
+    // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
+    const call = await Call.findOne({
+      $or: [
+        { twilioCallSid: CallSid },
+        { providerCallId: CallSid }
+      ]
+    });
     if (!call) return res.sendStatus(200);
 
     if (RecordingUrl) {

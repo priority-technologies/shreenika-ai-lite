@@ -99,10 +99,18 @@ export const createMediaStreamServer = (httpServer) => {
 
             try {
               // Find the call and initialize voice service
-              const call = await Call.findOne({ twilioCallSid });
+              // CRITICAL FIX (2026-02-19): Search by BOTH twilioCallSid (Twilio) and providerCallId (SansPBX)
+              // The CallSid in the URL could be either a Twilio CallSid or a provider CallSid
+              const call = await Call.findOne({
+                $or: [
+                  { twilioCallSid },
+                  { providerCallId: twilioCallSid }
+                ]
+              });
 
               if (!call) {
                 console.error(`❌ Call not found for SID: ${twilioCallSid}`);
+                console.error(`   Searched in both twilioCallSid and providerCallId fields`);
                 ws.close();
                 return;
               }
