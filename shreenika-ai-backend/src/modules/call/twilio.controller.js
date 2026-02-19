@@ -9,7 +9,6 @@ import { VoicePipeline } from "../voice/voicePipeline.js";
 import { CallControlService, createCallControl } from "./call.control.service.js";
 import { createTTSService, shouldUseTTS } from "../voice/tts.service.js";
 import { VoiceService } from "./voice.service.js";
-import { activeSessions } from "./mediastream.handler.js";
 
 const getMonthKey = () => {
   const d = new Date();
@@ -341,10 +340,12 @@ export const twilioVoice = async (req, res) => {
       const voiceService = new VoiceService(call._id, call.agentId, false, null);
 
       // Start initialization in background (don't await - send response immediately)
+      // CRITICAL FIX (2026-02-19): Lazy import to avoid circular dependency at startup
       voiceService.initialize()
-        .then(() => {
+        .then(async () => {
           console.log(`✅ /twilio/voice: VoiceService pre-initialized for call: ${call._id}`);
-          // Store in activeSessions so mediastream handler can use it
+          // Lazy import to avoid circular dependency at module load time
+          const { activeSessions } = await import('./mediastream.handler.js');
           activeSessions.set(actualCallSid, { voiceService, startTime: Date.now() });
         })
         .catch((err) => {
