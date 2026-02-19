@@ -337,7 +337,41 @@ export const twilioVoice = async (req, res) => {
       // For SansPBX, audio may arrive immediately after WebSocket connection,
       // so we can't wait for the 'start' message. Pre-initialize VoiceService now.
       console.log(`🚀 /twilio/voice: Pre-initializing VoiceService in background...`);
-      const voiceService = new VoiceService(call._id, call.agentId, false, null);
+
+      // Load agent to get voice configuration (same pattern as mediastream.handler.js)
+      let voiceConfig = null;
+      try {
+        const loadAgentPromise = Agent.findById(call.agentId);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Agent load timeout')), 5000)
+        );
+        const agent = await Promise.race([loadAgentPromise, timeoutPromise]);
+
+        // Build voiceConfig from agent settings (40% characteristics + 60% speech settings)
+        if (agent && agent.speechSettings) {
+          voiceConfig = {
+            characteristics40: {
+              traits: agent.characteristics || [],
+              emotions: agent.speechSettings?.emotions ?? 0.5
+            },
+            speechSettings60: {
+              voiceSpeed: agent.speechSettings?.voiceSpeed ?? 1.0,
+              responsiveness: agent.speechSettings?.responsiveness ?? 0.5,
+              interruptionSensitivity: agent.speechSettings?.interruptionSensitivity ?? 0.5,
+              backgroundNoise: agent.speechSettings?.backgroundNoise || 'office'
+            }
+          };
+          console.log(`🎙️ Voice config loaded for pre-initialization:`);
+          console.log(`   ├─ Characteristics: ${(voiceConfig.characteristics40.traits || []).join(', ') || 'none'}`);
+          console.log(`   ├─ Emotion Level: ${voiceConfig.characteristics40.emotions.toFixed(2)}`);
+          console.log(`   ├─ Voice Speed: ${voiceConfig.speechSettings60.voiceSpeed.toFixed(2)}x`);
+          console.log(`   └─ Background Noise: ${voiceConfig.speechSettings60.backgroundNoise}`);
+        }
+      } catch (agentError) {
+        console.warn(`⚠️ Could not load agent speech settings during pre-init: ${agentError.message}, continuing without voiceConfig`);
+      }
+
+      const voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
 
       // Start initialization in background (don't await - send response immediately)
       // CRITICAL FIX (2026-02-19): Lazy import to avoid circular dependency at startup
