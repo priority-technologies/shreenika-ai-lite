@@ -233,14 +233,14 @@ export const twilioVoice = async (req, res) => {
     console.log(`   Headers:`, JSON.stringify(req.headers, null, 2));
     console.log(`   Body:`, JSON.stringify(req.body, null, 2));
 
-    const { CallSid, callid, call_id, id, api_call_id } = req.body;
+    const { CallSid, callid, call_id, id, api_call_id, Linkedid } = req.body;
 
-    // Try multiple possible field names SansPBX might use
-    const actualCallSid = CallSid || callid || call_id || id || api_call_id;
+    // Try multiple possible field names - SansPBX uses "Linkedid"
+    const actualCallSid = CallSid || callid || call_id || id || api_call_id || Linkedid;
 
     if (!actualCallSid) {
       console.error(`❌ /twilio/voice: NO CALL ID FOUND in webhook payload!`);
-      console.error(`   Attempted to extract from: CallSid, callid, call_id, id, api_call_id`);
+      console.error(`   Attempted to extract from: CallSid, callid, call_id, id, api_call_id, Linkedid`);
       console.error(`   Available fields in req.body: ${Object.keys(req.body).join(', ')}`);
       return twilioVoiceFallback(req, res);
     }
