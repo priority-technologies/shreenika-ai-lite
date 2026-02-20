@@ -233,17 +233,16 @@ export const createMediaStreamServer = (httpServer) => {
             break;
 
           case 'start':
-            // SansPBX 'start' event - WebSocket ready for streaming
+            // SansPBX 'start' event OR Twilio 'start' event
             if (sansPbxMetadata.isSansPBX) {
+              // SansPBX 'start' event - WebSocket ready for streaming
               console.log(`✅ SansPBX WebSocket ready for audio streaming`);
               console.log(`   ├─ mediaFormat: ${JSON.stringify(message.mediaFormat)}`);
               console.log(`   └─ channelId: ${message.channelId}`);
             } else {
-              // Twilio 'start' event - original implementation
-              // Stream started - initialize voice service
-            // Stream started - initialize voice service
-            streamSid = message.start.streamSid;
-            const twilioCallSid = message.start.callSid;
+              // Twilio 'start' event - initialize voice service
+              streamSid = message.start.streamSid;
+              const twilioCallSid = message.start.callSid;
 
             console.log(`🎙️ Stream started: ${streamSid}`);
             console.log(`📞 Twilio Call SID: ${twilioCallSid}`);
@@ -410,6 +409,7 @@ export const createMediaStreamServer = (httpServer) => {
 
               ws.close();
             }
+            } // Close else block for Twilio
             break;
 
           case 'media':
