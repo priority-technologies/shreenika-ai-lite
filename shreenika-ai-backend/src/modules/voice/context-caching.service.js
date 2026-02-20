@@ -143,6 +143,9 @@ export class ContextCachingService {
    * Get or create cached content for system instruction + knowledge docs
    * CRITICAL: This is called once per agent per hour. Deduplication saves 90% of costs.
    *
+   * BUG FIX (2026-02-20): Don't cache personalized instructions (leadName-based)
+   * Caching is only for generic agent instructions (no per-call personalization)
+   *
    * @param {string} agentId - Agent ID (cache key)
    * @param {string} systemInstruction - Shreenika persona + role prompt
    * @param {Array} knowledgeDocs - Knowledge documents [{title, rawText}, ...]
@@ -156,6 +159,16 @@ export class ContextCachingService {
       console.log(`📝 Starter Plan detected (no knowledge docs) - Context caching disabled`);
       console.log(`   💡 Upgrade to Pro Plan to unlock 90% cost savings with document caching`);
       return null;  // Proceed without cache - system instruction will be sent in Gemini setup
+    }
+
+    // 🔴 BUG FIX (2026-02-20): Check if system instruction contains personalized greeting
+    // If it includes a specific lead name (e.g., "Hello John Ji"), don't cache
+    // because the next call will have a different lead name
+    // System instruction contains greeting like "Hello [FirstName] Ji" after buildSystemInstruction
+    if (systemInstruction && systemInstruction.includes('Hello ')) {
+      console.log(`👤 Personalized instruction detected (contains lead name greeting) - Skipping cache`);
+      console.log(`   💡 Caching disabled for personalized greetings (Bug 2.2 fix)`);
+      return null;  // Return null to send non-cached instruction
     }
 
     // Check if cache already exists for this agent (deduplication)
