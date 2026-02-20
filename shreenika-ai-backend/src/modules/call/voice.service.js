@@ -119,8 +119,10 @@ export class VoiceService extends EventEmitter {
       }
 
       // Create Gemini Live session with voice customization and Context Caching
+      // Pass lead name for personalized welcome message (Bug 2.2)
+      const leadName = !this.isTestMode && this.call?.leadName ? this.call.leadName : null;
       try {
-        this.geminiSession = await createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig);
+        this.geminiSession = await createGeminiLiveSession(this.agent, knowledgeDocs, this.voiceConfig, leadName);
       } catch (err) {
         console.error(`❌ Failed to create Gemini session:`, err.message);
         throw new Error(`Gemini session creation failed: ${err.message}`);

@@ -103,9 +103,10 @@ const buildCharacteristicsBehavior = (characteristics) => {
  * @param {Object} agent - Agent document from MongoDB
  * @param {Array} knowledgeDocs - Knowledge documents fetched from DB (optional)
  * @param {Object} voiceConfig - Voice customization config (optional)
+ * @param {String} leadName - Lead's full name for personalized welcome (optional) - Bug 2.2
  * @returns {string} - System instruction for Gemini
  */
-export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = null) => {
+export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = null, leadName = null) => {
   const parts = [];
 
   // Extract language from agent configuration
@@ -232,6 +233,7 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
   }
 
   // ===== CALL START BEHAVIOR =====
+  // Bug 2.2: Include personalized lead name in welcome message
   const callStartBehavior = agent.callStartBehavior || 'waitForHuman';
   parts.push('\n\nCRITICAL CALL BEHAVIOR:');
   parts.push('This is a REAL PHONE CALL. You are speaking to a real person via telephone.');
@@ -245,7 +247,26 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
   } else {
     parts.push('Start speaking immediately when the call connects.');
     parts.push('Greet the caller proactively without waiting for them to speak first.');
-    parts.push('Use a warm, confident opening like "Hello! This is ' + (agent.name || 'your assistant') + '."');
+
+    // Build personalized greeting with lead name (Bug 2.2)
+    let greeting = 'Use a warm, confident opening like "Hello! This is ' + (agent.name || 'your assistant') + '.';
+
+    if (leadName) {
+      // Extract first name from "John Smith" → "John"
+      const firstName = leadName.split(' ')[0];
+      // Get language from agent config to determine salutation style
+      const language = agent.voiceProfile?.language || agent.language || 'en-US';
+
+      if (language.includes('hi') || language.includes('en-IN')) {
+        // India/Hindi: Use "Ji" suffix → "Hello John Ji, welcome..."
+        greeting = `Use a warm, confident opening like "Hello ${firstName} Ji! This is ${agent.name || 'your assistant'}. Welcome!"`;
+      } else {
+        // English/Global: Use "Mr." or "Ms." prefix (assume Mr. for now, can be extended) → "Hello Mr. John, welcome..."
+        greeting = `Use a warm, confident opening like "Hello Mr. ${firstName}! This is ${agent.name || 'your assistant'}. Welcome!"`;
+      }
+    }
+
+    parts.push(greeting + '"');
   }
 
   // Call handling instructions
@@ -594,16 +615,17 @@ export class GeminiLiveSession extends EventEmitter {
  * @param {Object} agent - Agent document from MongoDB
  * @param {Array} knowledgeDocs - Knowledge documents from DB (optional)
  * @param {Object} voiceConfig - Voice customization config (optional)
+ * @param {String} leadName - Lead's full name for personalized welcome (optional) - Bug 2.2
  * @returns {Promise<GeminiLiveSession>} - Configured session
  */
-export const createGeminiLiveSession = async (agent, knowledgeDocs = [], voiceConfig = null) => {
+export const createGeminiLiveSession = async (agent, knowledgeDocs = [], voiceConfig = null, leadName = null) => {
   const apiKey = process.env.GOOGLE_API_KEY;
 
   if (!apiKey) {
     throw new Error('GOOGLE_API_KEY is not configured');
   }
 
-  const systemInstruction = buildSystemInstruction(agent, knowledgeDocs, voiceConfig);
+  const systemInstruction = buildSystemInstruction(agent, knowledgeDocs, voiceConfig, leadName);
   const voice = mapAgentVoiceToGemini(agent.voiceProfile?.voiceId || agent.voiceId);
 
   // ✅ CRITICAL FIX: Use singleton for deduplication (saves 90% on cache creation)
