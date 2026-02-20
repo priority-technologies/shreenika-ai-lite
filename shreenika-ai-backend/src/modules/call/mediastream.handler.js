@@ -19,6 +19,31 @@ import Agent from '../agent/agent.model.js';
 export const activeSessions = new Map();
 
 /**
+ * Downsample audio from 44100 Hz to 16000 Hz
+ * Used for SansPBX incoming audio (44100 Hz LINEAR16) → Gemini Live (16000 Hz required)
+ *
+ * SansPBX incoming: 44100 Hz LINEAR16 mono
+ * Gemini Live requires: 16000 Hz
+ * Ratio: 44100 / 16000 = 2.75
+ *
+ * @param {Buffer} audioBuffer - Input audio buffer (44100 Hz PCM 16-bit)
+ * @returns {Buffer} - Output audio buffer (16000 Hz PCM 16-bit)
+ */
+function downsample44100to16k(audioBuffer) {
+  const inputSamples = audioBuffer.length / 2; // 16-bit = 2 bytes per sample
+  const outputSamples = Math.floor(inputSamples * 16000 / 44100);
+  const outputBuffer = Buffer.alloc(outputSamples * 2);
+
+  for (let i = 0; i < outputSamples; i++) {
+    const inputIndex = Math.floor(i * 44100 / 16000);
+    const sample = audioBuffer.readInt16LE(inputIndex * 2);
+    outputBuffer.writeInt16LE(sample, i * 2);
+  }
+
+  return outputBuffer;
+}
+
+/**
  * Voice Activity Detection (VAD) - Silence Detection for Real Calls
  * Reduces Gemini Live billing by ~30% by not sending silent/background noise frames
  *
@@ -100,9 +125,10 @@ export const createMediaStreamServer = (httpServer) => {
           if (firstByte !== 0x7B && firstByte !== 0x5B) {
             // Binary audio from SansPBX AudioSocket
             if (voiceService) {
-              // AudioSocket protocol: raw PCM 16-bit 8kHz mono
-              // Upsample to 16kHz for Gemini
-              const pcm16k = upsample8kTo16k(data);
+              // 🔴 CRITICAL FIX (2026-02-21): SansPBX sends 44100 Hz LINEAR16, NOT 8kHz
+              // Manager confirmed from SansPBX tech team logs: incoming is 44100 Hz
+              // Downsample to 16kHz for Gemini Live
+              const pcm16k = downsample44100to16k(data);
               if (isVoiceActive(pcm16k)) {
                 voiceService.sendAudio(pcm16k);
               }
@@ -420,16 +446,17 @@ export const createMediaStreamServer = (httpServer) => {
 
               if (sansPbxMetadata.isSansPBX && message.payload) {
                 // 🔴 CRITICAL FIX (2026-02-21): Handle SansPBX incoming audio
-                // SansPBX sends base64-encoded PCM Linear 8000Hz 16-bit mono audio
+                // Manager confirmed from SansPBX tech team logs: incoming is 44100 Hz LINEAR16, NOT 8kHz!
+                // SansPBX sends base64-encoded PCM Linear 44100Hz 16-bit mono audio
                 audioSource = 'SansPBX';
 
                 // Decode base64 to PCM buffer
                 const audioBuffer = Buffer.from(message.payload, 'base64');
 
-                // Upsample 8kHz → 16kHz for Gemini Live
-                pcmBuffer = upsample8kTo16k(audioBuffer);
+                // Downsample 44100Hz → 16kHz for Gemini Live
+                pcmBuffer = downsample44100to16k(audioBuffer);
 
-                console.log(`🎤 [SansPBX] Received media chunk #${message.chunk}: ${message.payload.length} chars base64 → ${pcmBuffer.length} bytes PCM 16kHz`);
+                console.log(`🎤 [SansPBX] Received media chunk #${message.chunk}: ${message.payload.length} chars base64 (44100Hz) → ${pcmBuffer.length} bytes PCM 16kHz`);
               } else if (!sansPbxMetadata.isSansPBX && message.media && message.media.payload) {
                 // Twilio Media Streams format
                 audioSource = 'Twilio';

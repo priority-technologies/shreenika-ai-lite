@@ -184,7 +184,7 @@ export class SansPBXProvider extends BaseProvider {
         call_to: normalizedTo,
         caller_id: normalizedFrom,
         status_callback: webhookUrl,  // SansPBX sends call status here (for reference only)
-        audio_ws_url: wsUrlPattern,    // 🔴 CRITICAL: Tell SansPBX where to send audio WebSocket
+        websocket_url: wsUrlPattern,   // 🔴 CRITICAL FIX (2026-02-21): Changed from audio_ws_url to websocket_url (Manager confirmed correct parameter name)
         custom_field: {
           record_id: `call_${Date.now()}`
         }
