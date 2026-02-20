@@ -160,26 +160,37 @@ export class SansPBXProvider extends BaseProvider {
       console.log(`   Formatted - To: ${normalizedTo} (destination - 11 digits with 0 prefix)`);
       console.log(`   Formatted - From: ${normalizedFrom} (DID - 7 digits only)`);
 
-      // Per SansPBX official API documentation, dial payload is simple:
+      // Per SansPBX official API documentation, dial payload:
       // - appid: Application ID (determines how call is routed and handled)
       // - call_to: Destination number to dial
       // - caller_id: Caller ID (DID) to display to callee
-      // - status_callback: URL where SansPBX sends call status webhooks
+      // - status_callback: URL where SansPBX sends call status webhooks (DEPRECATED for audio)
+      // - audio_ws_url: (CRITICAL FIX 2026-02-21) WebSocket URL for audio streaming
+      //   This tells SansPBX where to establish the audio WebSocket connection
+      //   Format: wss://backend-url/media-stream/{callId}
       // - custom_field: Custom data returned in webhook callbacks
       //
-      // CRITICAL: The status_callback URL is where we receive ALL call events.
-      // We must handle BOTH initial call (disposition=ANSWER) and final call end.
-      // Audio streaming is configured via the appid in SansPBX admin panel.
+      // CRITICAL: Audio streaming requires the WebSocket URL parameter.
+      // Without this, SansPBX won't know where to send the audio connection.
+
+      // Construct WebSocket URL for SansPBX audio streaming
+      // SansPBX will append the callId to this URL pattern
+      const publicBaseUrl = process.env.PUBLIC_BASE_URL || 'https://shreenika-ai-backend-507468019722.asia-south1.run.app';
+      const audioWsUrl = publicBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+      const wsUrlPattern = `${audioWsUrl}/media-stream`; // SansPBX will append /{callId}
 
       const payload = {
         appid: this.credentials.appId || 6,
         call_to: normalizedTo,
         caller_id: normalizedFrom,
-        status_callback: webhookUrl,  // SansPBX will POST call events here
+        status_callback: webhookUrl,  // SansPBX sends call status here (for reference only)
+        audio_ws_url: wsUrlPattern,    // 🔴 CRITICAL: Tell SansPBX where to send audio WebSocket
         custom_field: {
           record_id: `call_${Date.now()}`
         }
       };
+
+      console.log(`📡 SansPBX: Audio WebSocket URL configured: ${wsUrlPattern}`);
 
       const controller = new AbortController();
       const fetchTimeout = setTimeout(() => controller.abort(), 30000); // Fetch-specific timeout
