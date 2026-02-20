@@ -80,6 +80,14 @@ export const createMediaStreamServer = (httpServer) => {
     let durationInterval = null;
     let isClosing = false;
 
+    // SansPBX AudioSocket metadata
+    let sansPbxMetadata = {
+      streamId: null,
+      channelId: null,
+      callId: null,
+      isSansPBX: false
+    };
+
     // Handle Twilio Media Stream messages
     ws.on('message', async (data) => {
       try {
@@ -108,6 +116,120 @@ export const createMediaStreamServer = (httpServer) => {
         switch (message.event) {
           case 'connected':
             console.log(`📡 Media Stream connected event`);
+            break;
+
+          case 'answer':
+            // SansPBX AudioSocket - call answered
+            console.log(`✅ SansPBX call answered: ${message.callId}`);
+            sansPbxMetadata.streamId = message.streamId;
+            sansPbxMetadata.channelId = message.channelId;
+            sansPbxMetadata.callId = message.callId;
+            sansPbxMetadata.isSansPBX = true;
+            console.log(`📞 SansPBX metadata stored: streamId=${message.streamId}, callId=${message.callId}`);
+
+            // Initialize voice service for SansPBX
+            try {
+              const call = await Call.findOne({ providerCallId: message.callId });
+              if (!call) {
+                console.error(`❌ Call not found for SansPBX callId: ${message.callId}`);
+                ws.close();
+                return;
+              }
+
+              // Load agent voice config
+              let voiceConfig = null;
+              try {
+                const agent = await Agent.findById(call.agentId);
+                if (agent && agent.speechSettings) {
+                  voiceConfig = {
+                    characteristics40: {
+                      traits: agent.characteristics || [],
+                      emotions: agent.speechSettings?.emotions ?? 0.5
+                    },
+                    speechSettings60: {
+                      voiceSpeed: agent.speechSettings?.voiceSpeed ?? 1.0,
+                      responsiveness: agent.speechSettings?.responsiveness ?? 0.5,
+                      interruptionSensitivity: agent.speechSettings?.interruptionSensitivity ?? 0.5,
+                      backgroundNoise: agent.speechSettings?.backgroundNoise || 'office'
+                    }
+                  };
+                  console.log(`🎙️ Voice customization loaded for SansPBX:`);
+                  console.log(`   ├─ Characteristics: ${(voiceConfig.characteristics40.traits || []).join(', ') || 'none'}`);
+                  console.log(`   ├─ Emotion Level: ${voiceConfig.characteristics40.emotions.toFixed(2)}`);
+                  console.log(`   └─ Voice Speed: ${voiceConfig.speechSettings60.voiceSpeed.toFixed(2)}x`);
+                }
+              } catch (agentError) {
+                console.warn(`⚠️ Could not load agent: ${agentError.message}`);
+              }
+
+              // Initialize VoiceService for SansPBX
+              voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
+              console.log(`🚀 Creating VoiceService for SansPBX call: ${message.callId}`);
+
+              // Set up audio event handler - CRITICAL FIX for SansPBX format
+              voiceService.on('audio', (audioBuffer) => {
+                if (!sansPbxMetadata.isSansPBX || !voiceService) return;
+
+                try {
+                  // SansPBX expects: reverse-media event with PCM Linear 8000Hz 16-bit base64 audio
+                  // Convert: 24kHz PCM (Gemini) → 8kHz PCM Linear
+                  const pcm8k = downsample24kTo8k(audioBuffer);
+
+                  // Encode to base64 (NOT MULAW, NOT binary)
+                  const base64Audio = pcm8k.toString('base64');
+
+                  // Send as reverse-media JSON event
+                  const reverseMediaEvent = {
+                    event: 'reverse-media',
+                    payload: base64Audio,
+                    streamId: sansPbxMetadata.streamId,
+                    channelId: sansPbxMetadata.channelId,
+                    callId: sansPbxMetadata.callId
+                  };
+
+                  if (ws.readyState === ws.OPEN) {
+                    ws.send(JSON.stringify(reverseMediaEvent));
+                    console.log(`📤 SansPBX reverse-media: Sent ${base64Audio.length} chars of base64 PCM audio`);
+                  }
+                } catch (audioSendError) {
+                  console.error(`❌ Error sending SansPBX audio:`, audioSendError.message);
+                }
+              });
+
+              voiceService.on('text', (text, role) => {
+                console.log(`💬 [${role}]: ${text}`);
+              });
+
+              voiceService.on('error', (error) => {
+                console.error(`❌ Voice service error:`, error.message);
+              });
+
+              voiceService.on('close', () => {
+                console.log(`🔌 Voice service closed for SansPBX`);
+                if (!isClosing) {
+                  isClosing = true;
+                  ws.close();
+                }
+              });
+
+              // Initialize voice service
+              await voiceService.initialize();
+              console.log(`✅ VoiceService initialized for SansPBX: ${message.callId}`);
+
+              // Store session
+              activeSessions.set(callSid, {
+                streamSid: message.streamId,
+                voiceService,
+                callControl,
+                ws,
+                startTime: Date.now(),
+                provider: 'SansPBX'
+              });
+
+            } catch (error) {
+              console.error(`❌ SansPBX VOICE SERVICE INITIALIZATION FAILED:`, error.message);
+              ws.close();
+            }
             break;
 
           case 'start':
@@ -181,37 +303,21 @@ export const createMediaStreamServer = (httpServer) => {
                 console.log(`🚀 Creating new VoiceService for call: ${callSid}`);
               }
 
-              // Set up event handlers
+              // Set up event handlers for Twilio (SansPBX audio handled in 'answer' case above)
               voiceService.on('audio', (audioBuffer) => {
-                // CRITICAL FIX (2026-02-20): Send audio in provider-specific format
-                // SansPBX uses binary MULAW audio directly (not JSON, not base64)
-                // Twilio uses JSON with base64-encoded audio
+                // CRITICAL FIX (2026-02-21): SansPBX audio handled in 'answer' event
+                // This handler is for Twilio Media Streams only
 
                 try {
-                  if (call.voipProvider === 'SansPBX') {
-                    // SansPBX AudioSocket expects raw binary MULAW audio
-                    // Convert: 24kHz PCM (Gemini) → 8kHz PCM → MULAW binary
-
-                    // Downsample Gemini 24kHz to 8kHz (3:1 decimation)
-                    const pcm8k = downsample24kTo8k(audioBuffer);
-
-                    // Encode PCM to MULAW binary (SansPBX native format)
-                    const mulawBinary = encodeMulawBuffer(pcm8k);
-
-                    // Send raw MULAW binary (AudioSocket protocol)
-                    if (ws.readyState === ws.OPEN) {
-                      ws.send(mulawBinary);
-                      console.log(`📤 SansPBX AudioSocket: Sent ${mulawBinary.length} bytes of MULAW audio`);
-                    }
-                  } else {
-                    // Twilio Media Streams expects JSON with base64-encoded audio
-                    const base64Audio = geminiToTwilio(audioBuffer);
-                    const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
+                  // Twilio Media Streams expects JSON with base64-encoded audio
+                  const base64Audio = geminiToTwilio(audioBuffer);
+                  const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
+                  if (ws.readyState === ws.OPEN) {
                     ws.send(JSON.stringify(mediaMessage));
                     console.log(`📤 Twilio: Sent media frame with ${base64Audio.length} chars of base64 audio`);
                   }
                 } catch (audioSendError) {
-                  console.error(`❌ Error sending audio back: ${audioSendError.message}`);
+                  console.error(`❌ Error sending Twilio audio back: ${audioSendError.message}`);
                 }
               });
 
