@@ -149,6 +149,15 @@ export class ContextCachingService {
    * @returns {Promise<string|null>} - cache_id or null if below threshold
    */
   async getOrCreateCache(agentId, systemInstruction, knowledgeDocs = []) {
+    // 🔴 CRITICAL FIX (2026-02-21): Skip caching for Starter Plan (no knowledge docs)
+    // Starter Plan: No documents allowed → Caching disabled → Voice works without 90% discount
+    // Pro Plan: With documents → Caching enabled → 90% cost savings
+    if (!knowledgeDocs || knowledgeDocs.length === 0) {
+      console.log(`📝 Starter Plan detected (no knowledge docs) - Context caching disabled`);
+      console.log(`   💡 Upgrade to Pro Plan to unlock 90% cost savings with document caching`);
+      return null;  // Proceed without cache - system instruction will be sent in Gemini setup
+    }
+
     // Check if cache already exists for this agent (deduplication)
     if (this.cacheMap.has(agentId)) {
       const cached = this.cacheMap.get(agentId);
