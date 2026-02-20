@@ -70,6 +70,16 @@ const extractTextFromFile = async (filePath, mimeType) => {
     return null;
   }
 
+  // BUG 2.4 FIX (2026-02-20): Accept ALL unknown file types and try OCR
+  // Instead of returning null for unknown types, attempt Vision OCR extraction
+  console.log(`📄 Unknown file type: ${ext} - Attempting Vision OCR extraction...`);
+  const ocrText = await extractWithVisionOCR(filePath);
+  if (ocrText) {
+    console.log(`✅ Vision OCR succeeded for ${ext}: ${ocrText.length} chars extracted`);
+    return ocrText;
+  }
+
+  console.warn(`⚠️  Unsupported file type ${ext} and Vision OCR returned no text`);
   return null;
 };
 
@@ -119,6 +129,8 @@ export const uploadKnowledgeFile = async (req, res) => {
     let sourceType = "TEXT";
     if (ext === ".pdf") sourceType = "PDF";
     else if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tiff"].includes(ext)) sourceType = "IMAGE";
+    else if (ext === ".docx") sourceType = "DOCX";
+    // BUG 2.4 FIX: All other types will be processed as TEXT or OCR-extracted
 
     console.log(`📥 Knowledge upload: ${fileName} (${sourceType}, ${(req.file.size / 1024).toFixed(1)} KB)`);
 

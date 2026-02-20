@@ -310,7 +310,7 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
   const handleDeleteLog = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     
-    if (!window.confirm("Archive this call log? (Data will be hidden but preserved)")) return;
+    if (!window.confirm("Delete this call log? (Data will be hidden but preserved)")) return;
 
     try {
       await apiFetch(`/calls/${id}`, {
@@ -691,7 +691,7 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
                               onClick={(e) => handleDeleteLog(e, log.id)} 
                               className="w-full text-left px-4 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center"
                             >
-                               <Trash2 className="w-3 h-3 mr-2" /> Archive
+                               <Trash2 className="w-3 h-3 mr-2" /> Delete
                             </button>
                          </div>
                        </>
