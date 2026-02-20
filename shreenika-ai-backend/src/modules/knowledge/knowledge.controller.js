@@ -22,17 +22,33 @@ const extractTextFromFile = async (filePath, mimeType) => {
       const pdfData = await pdfParse(dataBuffer);
       const text = pdfData.text?.trim();
 
+      console.log(`🔍 PDF parse result: text=${text ? text.length : 0} chars, pages=${pdfData.numpages}`);
+
       if (text && text.length > 10) {
         console.log(`📄 PDF text extracted: ${text.length} chars, ${pdfData.numpages} pages`);
         return text;
       }
 
       // If pdf-parse returns very little text, try OCR as fallback for scanned PDFs
-      console.log("⚠️ PDF has minimal text, trying Vision OCR fallback...");
-      return await extractWithVisionOCR(filePath);
+      console.log("⚠️ PDF has minimal text (<10 chars), trying Vision OCR fallback...");
+      const ocrText = await extractWithVisionOCR(filePath);
+      if (ocrText) {
+        console.log(`✅ Vision OCR recovered ${ocrText.length} chars from PDF`);
+        return ocrText;
+      }
+
+      // Both extraction methods failed
+      console.error("❌ PDF extraction failed: pdf-parse returned <10 chars AND Vision OCR returned nothing");
+      return null;
     } catch (err) {
-      console.error("PDF parse error, trying OCR fallback:", err.message);
-      return await extractWithVisionOCR(filePath);
+      console.error("❌ PDF parse error:", err.message);
+      console.log("   Trying Vision OCR fallback...");
+      const ocrText = await extractWithVisionOCR(filePath);
+      if (ocrText) {
+        console.log(`✅ Vision OCR recovered ${ocrText.length} chars from PDF`);
+        return ocrText;
+      }
+      return null;
     }
   }
 
@@ -113,8 +129,15 @@ export const uploadKnowledgeFile = async (req, res) => {
     try { fs.unlinkSync(filePath); } catch (e) { /* ignore */ }
 
     if (!extractedText || extractedText.length < 10) {
+      const errorDetails = !extractedText
+        ? "Text extraction returned nothing (check logs for pdf-parse or Vision OCR errors)"
+        : `Extracted text too short (${extractedText.length} chars, need >10)`;
+
+      console.error(`❌ Upload validation failed: ${errorDetails}`);
+
       return res.status(400).json({
-        error: "Could not extract meaningful text from this file. Please ensure the document contains readable text."
+        error: "Could not extract meaningful text from this file. Please ensure the document contains readable text.",
+        details: errorDetails
       });
     }
 
