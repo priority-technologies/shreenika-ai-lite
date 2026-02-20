@@ -233,6 +233,14 @@ export const createMediaStreamServer = (httpServer) => {
             break;
 
           case 'start':
+            // SansPBX 'start' event - WebSocket ready for streaming
+            if (sansPbxMetadata.isSansPBX) {
+              console.log(`✅ SansPBX WebSocket ready for audio streaming`);
+              console.log(`   ├─ mediaFormat: ${JSON.stringify(message.mediaFormat)}`);
+              console.log(`   └─ channelId: ${message.channelId}`);
+            } else {
+              // Twilio 'start' event - original implementation
+              // Stream started - initialize voice service
             // Stream started - initialize voice service
             streamSid = message.start.streamSid;
             const twilioCallSid = message.start.callSid;
@@ -405,10 +413,32 @@ export const createMediaStreamServer = (httpServer) => {
             break;
 
           case 'media':
-            // Audio data from caller
-            if (voiceService && message.media && message.media.payload) {
-              // Convert Twilio audio to Gemini format
-              const pcmBuffer = twilioToGemini(message.media.payload);
+            // Audio data from caller (both Twilio and SansPBX)
+            try {
+              let pcmBuffer = null;
+              let audioSource = 'unknown';
+
+              if (sansPbxMetadata.isSansPBX && message.payload) {
+                // 🔴 CRITICAL FIX (2026-02-21): Handle SansPBX incoming audio
+                // SansPBX sends base64-encoded PCM Linear 8000Hz 16-bit mono audio
+                audioSource = 'SansPBX';
+
+                // Decode base64 to PCM buffer
+                const audioBuffer = Buffer.from(message.payload, 'base64');
+
+                // Upsample 8kHz → 16kHz for Gemini Live
+                pcmBuffer = upsample8kTo16k(audioBuffer);
+
+                console.log(`🎤 [SansPBX] Received media chunk #${message.chunk}: ${message.payload.length} chars base64 → ${pcmBuffer.length} bytes PCM 16kHz`);
+              } else if (!sansPbxMetadata.isSansPBX && message.media && message.media.payload) {
+                // Twilio Media Streams format
+                audioSource = 'Twilio';
+                pcmBuffer = twilioToGemini(message.media.payload);
+              } else {
+                return; // No audio data to process
+              }
+
+              if (!voiceService || !pcmBuffer) return;
 
               // Silence detection on each chunk (if CallControl enabled)
               if (callControl) {
@@ -427,25 +457,53 @@ export const createMediaStreamServer = (httpServer) => {
 
               // ✅ VAD (Voice Activity Detection): Skip silent frames
               // Reduces Gemini billing by ~30% (silence doesn't need AI processing)
-              // Threshold lowered to 0.003 to avoid filtering actual speech
               if (!isVoiceActive(pcmBuffer)) {
-                // Silence detected - skip this chunk (saves ~$0.3/min on silence)
+                // Silence detected - skip this chunk
                 return;
               }
 
-              // Send to Gemini Live
+              // Send to Gemini Live for processing
               voiceService.sendAudio(pcmBuffer);
+            } catch (mediaError) {
+              console.error(`❌ Error processing ${audioSource} media:`, mediaError.message);
+            }
+            break;
+
+          case 'dtmf':
+            // DTMF (phone button) pressed during call
+            if (sansPbxMetadata.isSansPBX) {
+              console.log(`📱 [SansPBX] DTMF digit received: ${message.digit} (duration: ${message.dtfDurationMs}ms)`);
+              // TODO: Handle DTMF input if needed (e.g., menu navigation)
             }
             break;
 
           case 'mark':
             // Mark event (used for tracking playback)
-            console.log(`🏷️ Mark received: ${message.mark?.name}`);
+            if (!sansPbxMetadata.isSansPBX) {
+              console.log(`🏷️ Mark received: ${message.mark?.name}`);
+            }
             break;
 
           case 'stop':
-            // Stream stopping
-            console.log(`🛑 Stream stopping`);
+            // Call stopped/disconnected
+            if (sansPbxMetadata.isSansPBX) {
+              console.log(`🛑 [SansPBX] Call stopped by ${message.disconnectedBy}`);
+              console.log(`   └─ callId: ${message.callId}, timestamp: ${message.timestamp}`);
+            } else {
+              console.log(`🛑 Stream stopping`);
+            }
+
+            // Clean up resources
+            if (!isClosing) {
+              isClosing = true;
+              if (voiceService) {
+                await voiceService.close();
+              }
+              if (durationInterval) {
+                clearInterval(durationInterval);
+              }
+              ws.close();
+            }
             break;
 
           default:
