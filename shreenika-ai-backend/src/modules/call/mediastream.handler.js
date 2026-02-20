@@ -76,10 +76,15 @@ function isVoiceActive(audioBuffer) {
  * @param {http.Server} httpServer - HTTP server instance
  */
 export const handleMediaStreamUpgrade = (request, socket, head, wss) => {
-  // Extract call SID from URL path
+  // 🔴 CRITICAL FIX (2026-02-21): Extract call SID from URL path
+  // Twilio format: /media-stream/{callSid}
+  // SansPBX format: /media-stream (no call ID - comes from 'answer' event)
   const url = new URL(request.url, `http://${request.headers.host}`);
-  const pathParts = url.pathname.split('/');
-  const callSid = pathParts[pathParts.length - 1];
+  const pathParts = url.pathname.split('/').filter(Boolean); // Remove empty strings
+
+  // For SansPBX: pathParts = ['media-stream'], use temporary ID
+  // For Twilio: pathParts = ['media-stream', 'callSid'], use the callSid
+  const callSid = pathParts.length > 1 ? pathParts[1] : `ws-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   console.log(`📞 Media Stream upgrade request for call: ${callSid}`);
 
@@ -574,7 +579,10 @@ export const createMediaStreamServer = (httpServer) => {
   httpServer.on('upgrade', (request, socket, head) => {
     const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
 
-    if (pathname.startsWith('/media-stream/')) {
+    // 🔴 CRITICAL FIX (2026-02-21): Handle BOTH /media-stream and /media-stream/{callId}
+    // SansPBX connects to /media-stream (no trailing slash or call ID)
+    // Twilio connects to /media-stream/{callSid}
+    if (pathname === '/media-stream' || pathname.startsWith('/media-stream/')) {
       handleMediaStreamUpgrade(request, socket, head, wss);
     }
     // Note: Socket.IO handles its own upgrades, so we only handle /media-stream
