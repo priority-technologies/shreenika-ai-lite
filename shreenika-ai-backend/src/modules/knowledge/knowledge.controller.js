@@ -2,6 +2,8 @@ import fs from "fs";
 import path from "path";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
+// 🔴 FIX (2026-02-21 REVISED): Use pdf-parse v1 API (simpler, buffer-based)
+// v1 uses: const pdfParse = require('pdf-parse'); await pdfParse(buffer)
 const pdfParse = require("pdf-parse");
 import Knowledge from "./knowledge.model.js";
 import Agent from "../agent/agent.model.js";
@@ -15,17 +17,19 @@ import Agent from "../agent/agent.model.js";
 const extractTextFromFile = async (filePath, mimeType) => {
   const ext = path.extname(filePath).toLowerCase();
 
-  // PDF extraction using pdf-parse (handles text-based and scanned PDFs)
+  // PDF extraction using pdf-parse v1 (handles text-based PDFs)
   if (ext === ".pdf" || mimeType === "application/pdf") {
     try {
       const dataBuffer = fs.readFileSync(filePath);
+      // 🔴 FIX (2026-02-21 REVISED): Use pdf-parse v1 API - simple await pdfParse(buffer)
       const pdfData = await pdfParse(dataBuffer);
-      const text = pdfData.text?.trim();
+      const text = pdfData.text?.trim() || "";
+      const pages = pdfData.numpages || 0;
 
-      console.log(`🔍 PDF parse result: text=${text ? text.length : 0} chars, pages=${pdfData.numpages}`);
+      console.log(`🔍 PDF parse result: text=${text.length} chars, pages=${pages}`);
 
       if (text && text.length > 10) {
-        console.log(`📄 PDF text extracted: ${text.length} chars, ${pdfData.numpages} pages`);
+        console.log(`📄 PDF text extracted: ${text.length} chars from ${pages} pages`);
         return text;
       }
 
