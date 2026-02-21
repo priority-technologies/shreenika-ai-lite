@@ -142,7 +142,7 @@ app.use("/calls", callRoutes);
 app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
-app.use("/voice", voiceRoutes);
+app.use("/api/voice", voiceRoutes);
 app.use("/webhooks", webhookRoutes);
 app.use("/api/agents", agentRoutes);
 app.use("/api/test-agent", testAgentRoutes);
