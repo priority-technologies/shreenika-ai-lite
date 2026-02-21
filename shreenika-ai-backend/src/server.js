@@ -25,8 +25,7 @@ import voiceRoutes from "./modules/voice/voice.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import webhookRoutes from "./modules/webhook/webhook.routes.js";
-import { handleTestAgentUpgrade } from "./modules/call/test-agent.handler.js";
-import { createMediaStreamServer } from "./modules/call/mediastream.handler.js";
+import { createMediaStreamServer, registerUnifiedUpgradeHandler } from "./modules/call/mediastream.handler.js";
 import { WebSocketServer } from "ws";
 
 /* =======================
@@ -202,18 +201,9 @@ app.use((err, req, res, next) => {
 // Create media stream server with proper WebSocket handling
 const wss = createMediaStreamServer(httpServer);
 
-// Additional upgrade handler for test agent (separate from media streams)
-httpServer.on('upgrade', (req, res, head) => {
-  // Handle test agent WebSocket upgrade (browser-based voice testing)
-  if (req.url.startsWith('/test-agent/')) {
-    const sessionId = req.url.split('/')[2];
-    const testWss = new WebSocketServer({ noServer: true });
-    testWss.handleUpgrade(req, res, head, (ws) => {
-      handleTestAgentUpgrade(ws, req, sessionId);
-    });
-  }
-  // Media stream upgrades are handled by the wss server created above
-});
+// Register unified upgrade handler for BOTH media streams and test agent
+// This prevents duplicate handlers from overwriting each other (Node.js only calls the last registered)
+registerUnifiedUpgradeHandler(httpServer, wss);
 
 /* =======================
    SERVER STARTUP (AFTER ALL ROUTES CONFIGURED)

@@ -13,6 +13,7 @@ import { VoiceService } from './voice.service.js';
 import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
 import Call from './call.model.js';
 import Agent from '../agent/agent.model.js';
+import { handleTestAgentUpgrade } from './test-agent.handler.js';
 
 // Store active sessions
 // CRITICAL FIX (2026-02-19): Export for use by twilio.controller.js pre-initialization
@@ -575,22 +576,47 @@ export const createMediaStreamServer = (httpServer) => {
     });
   });
 
-  // Handle upgrade requests from HTTP server
-  httpServer.on('upgrade', (request, socket, head) => {
-    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-
-    // 🔴 CRITICAL FIX (2026-02-21): Handle BOTH /media-stream and /media-stream/{callId}
-    // SansPBX connects to /media-stream (no trailing slash or call ID)
-    // Twilio connects to /media-stream/{callSid}
-    if (pathname === '/media-stream' || pathname.startsWith('/media-stream/')) {
-      handleMediaStreamUpgrade(request, socket, head, wss);
-    }
-    // Note: Socket.IO handles its own upgrades, so we only handle /media-stream
-  });
+  // Do NOT register upgrade handler here - it will be registered as a unified handler in server.js
+  // This prevents duplicate handlers from overwriting each other (Node.js only calls the last registered)
 
   console.log('✅ Media Stream WebSocket server created');
 
   return wss;
+};
+
+/**
+ * Register unified WebSocket upgrade handler
+ * Handles both media streams and test agent connections with a single handler
+ * This prevents duplicate upgrade handlers from overwriting each other
+ *
+ * @param {http.Server} httpServer - HTTP server instance
+ * @param {WebSocketServer} mediaStreamWss - Media stream WebSocket server
+ */
+export const registerUnifiedUpgradeHandler = (httpServer, mediaStreamWss) => {
+  httpServer.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+
+    // Handle media streams (Twilio + SansPBX)
+    if (pathname === '/media-stream' || pathname.startsWith('/media-stream/')) {
+      handleMediaStreamUpgrade(request, socket, head, mediaStreamWss);
+      return;
+    }
+
+    // Handle test agent WebSocket connections
+    if (pathname.startsWith('/test-agent/')) {
+      const sessionId = pathname.split('/')[2]; // Extract sessionId from /test-agent/{sessionId}
+      const testWss = new WebSocketServer({ noServer: true });
+      testWss.handleUpgrade(request, socket, head, (ws) => {
+        handleTestAgentUpgrade(ws, request, sessionId);
+      });
+      return;
+    }
+
+    // Unknown path - close socket
+    socket.destroy();
+  });
+
+  console.log('✅ Unified WebSocket upgrade handler registered (media-stream + test-agent)');
 };
 
 /**
