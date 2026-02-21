@@ -1,189 +1,185 @@
 /**
- * Hedge Engine Service
+ * Hedge Engine - Audio Filler System
  *
- * Latency-Masking State Machine for real-time voice interactions.
+ * Reduces perceived latency during voice calls by inserting natural-sounding
+ * audio fillers (from real sales calls) during LLM processing delays.
  *
- * Problem: Gemini Live has Time to First Byte (TTFB) latency (~400ms).
- * Solution: Play pre-recorded filler audio ("Acha...", "Hmm...") if Gemini takes >400ms.
- * Result: Illusion of instant response, sounds attentive rather than processing.
- *
- * State Machine:
- * 1. User stops speaking → Start 400ms timer
- * 2a. If Gemini sends audio → Kill timer, play Gemini audio (natural flow)
- * 2b. If 400ms expires → Play filler audio, then Gemini audio when it arrives
- *
- * Implementation: setTimeout-based state tracking per call session
+ * How it works:
+ * 1. Detects when Gemini Live API is thinking (no audio output for >400ms)
+ * 2. Inserts brief audio fillers from real sales calls
+ * 3. Transitions seamlessly when real response arrives
  */
 
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
+import { EventEmitter } from 'events';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-/**
- * Hedge Engine - Manages latency masking for a single call
- */
-export class HedgeEngine {
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export default class HedgeEngine extends EventEmitter {
   constructor(callId, agentId) {
+    super();
     this.callId = callId;
     this.agentId = agentId;
 
-    // Timer state
-    this.hedgeTimer = null;
-    this.hedgeThreshold = 400; // milliseconds
+    this.fillerBuffers = [];
+    this.currentFillerIndex = 0;
 
-    // Filler audio buffers (preloaded at startup)
-    this.fillerBuffers = null;
-    this.fillerIndex = 0;
+    // Latency tracking
+    this.lastGeminiAudioTime = null;
+    this.lastUserSpeechTime = null;
+    this.fillerInterval = null;
 
-    // State tracking
-    this.userSpeechEnded = false;
-    this.geminiAudioReceived = false;
-    this.fillerPlayed = false;
-
-    // Statistics
-    this.timingsLog = [];
+    // Filler playback control
+    this.isPlaying = false;
+    this.maxFillerDuration = 2000; // 2 seconds max per filler
+    this.fillerPlaybackThreshold = 400; // Play filler after 400ms of silence
   }
 
   /**
-   * Initialize filler audio buffers (called once at startup)
-   * @static
-   * @returns {Promise<Object>} - Map of filler name → buffer
+   * Initialize audio fillers from PCM files
+   * Static method called during voice service initialization
+   *
+   * @returns {Promise<Array>} - Array of PCM audio buffers
    */
   static async initializeFillers() {
-    if (HedgeEngine.fillerCache) {
-      return HedgeEngine.fillerCache;
-    }
+    try {
+      const fillersDir = path.join(__dirname, '../../audio/fillers');
 
-    const fillers = {};
-    const fillerDir = resolve('./assets/filler-audio');
-
-    // List of filler audio files (16-bit PCM, 24kHz, Mono, Little-Endian)
-    const fillerFiles = [
-      'acha.pcm',      // "Acha"
-      'hmm.pcm',       // "Hmm"
-      'give-me-second.pcm', // "Give me a second"
-      'ji.pcm',        // "Ji"
-      'okay.pcm'       // "Okay"
-    ];
-
-    for (const filename of fillerFiles) {
-      try {
-        const filePath = resolve(fillerDir, filename);
-        fillers[filename] = readFileSync(filePath);
-        console.log(`✅ Filler loaded: ${filename} (${fillers[filename].length} bytes)`);
-      } catch (err) {
-        console.warn(`⚠️ Filler not found: ${filename}`);
-        // Continue - fillers are optional (graceful degradation)
+      // Check if directory exists
+      if (!fs.existsSync(fillersDir)) {
+        console.warn(`⚠️  Audio fillers directory not found: ${fillersDir}`);
+        return [];
       }
-    }
 
-    // Cache for reuse
-    HedgeEngine.fillerCache = fillers;
-    return fillers;
+      const files = fs.readdirSync(fillersDir).filter(f => f.endsWith('.pcm'));
+
+      if (files.length === 0) {
+        console.warn('⚠️  No PCM audio fillers found in fillers directory');
+        return [];
+      }
+
+      const fillers = [];
+
+      // Load each PCM filler file
+      for (const file of files) {
+        try {
+          const filePath = path.join(fillersDir, file);
+          const buffer = fs.readFileSync(filePath);
+          fillers.push(buffer);
+
+          const durationSecs = (buffer.length / 2) / 16000; // PCM 16-bit mono at 16kHz
+          console.log(`📻 Loaded filler: ${file} (${(buffer.length / 1024).toFixed(1)}KB, ${durationSecs.toFixed(2)}s)`);
+        } catch (err) {
+          console.error(`❌ Failed to load filler ${file}:`, err.message);
+        }
+      }
+
+      if (fillers.length > 0) {
+        console.log(`✅ Hedge Engine fillers loaded: ${fillers.length} files ready`);
+      }
+
+      return fillers;
+    } catch (err) {
+      console.error('❌ Hedge Engine initialization failed:', err.message);
+      return [];
+    }
   }
 
   /**
-   * Signal user speech has ended
-   * Start countdown to play filler if Gemini is slow
-   */
-  markUserSpeechEnded() {
-    if (this.hedgeTimer) {
-      clearTimeout(this.hedgeTimer);
-    }
-
-    this.userSpeechEnded = true;
-    this.geminiAudioReceived = false;
-    this.fillerPlayed = false;
-
-    const startTime = Date.now();
-    console.log(`🎙️ [${this.callId}] User speech ended, starting ${this.hedgeThreshold}ms hedge timer`);
-
-    this.hedgeTimer = setTimeout(() => {
-      if (!this.geminiAudioReceived && !this.fillerPlayed) {
-        console.log(`⏱️ [${this.callId}] Hedge timeout - playing filler audio`);
-        this.fillerPlayed = true;
-        this.emit('playFiller', this.getNextFiller());
-      }
-    }, this.hedgeThreshold);
-  }
-
-  /**
-   * Signal Gemini audio chunk received
-   * Kill hedge timer and resume normal flow
+   * Mark when Gemini audio was last received
+   * Used to detect thinking/processing delays
    */
   markGeminiAudioReceived() {
-    if (this.hedgeTimer) {
-      const elapsed = this.hedgeThreshold; // Approximate, timer already fired if here
-      clearTimeout(this.hedgeTimer);
-      this.hedgeTimer = null;
-
-      const status = this.fillerPlayed ? '(after filler)' : '(within threshold)';
-      console.log(`✅ [${this.callId}] Gemini audio received ${status}`);
-
-      this.timingsLog.push({
-        timestamp: new Date().toISOString(),
-        fillerPlayed: this.fillerPlayed,
-        elapsed
-      });
-    }
-
-    this.geminiAudioReceived = true;
+    this.lastGeminiAudioTime = Date.now();
+    this.stopFillerPlayback();
   }
 
   /**
-   * Get next filler audio buffer (round-robin)
+   * Mark when user speech ended
+   * Used to detect when user is done talking
+   */
+  markUserSpeechEnded() {
+    this.lastUserSpeechTime = Date.now();
+    this.startFillerPlayback();
+  }
+
+  /**
+   * Start playing fillers during silence
+   * Internal method
+   */
+  startFillerPlayback() {
+    if (this.isPlaying || !this.fillerBuffers || this.fillerBuffers.length === 0) {
+      return;
+    }
+
+    this.isPlaying = true;
+
+    // Start checking for silence and play fillers
+    this.fillerInterval = setInterval(() => {
+      const now = Date.now();
+      const timeSinceLastAudio = now - (this.lastGeminiAudioTime || now);
+
+      // If more than threshold ms since last Gemini audio, play a filler
+      if (timeSinceLastAudio > this.fillerPlaybackThreshold && this.fillerBuffers.length > 0) {
+        const filler = this.fillerBuffers[this.currentFillerIndex];
+        this.currentFillerIndex = (this.currentFillerIndex + 1) % this.fillerBuffers.length;
+
+        // Emit filler for playback
+        this.emit('playFiller', filler);
+      }
+    }, this.maxFillerDuration);
+  }
+
+  /**
+   * Stop playing fillers
+   * Called when real Gemini audio arrives
+   */
+  stopFillerPlayback() {
+    if (this.fillerInterval) {
+      clearInterval(this.fillerInterval);
+      this.fillerInterval = null;
+    }
+    this.isPlaying = false;
+  }
+
+  /**
+   * Get next filler in rotation
+   *
    * @returns {Buffer|null}
    */
   getNextFiller() {
-    if (!this.fillerBuffers || Object.keys(this.fillerBuffers).length === 0) {
-      console.warn(`⚠️ No filler audio available`);
+    if (!this.fillerBuffers || this.fillerBuffers.length === 0) {
       return null;
     }
 
-    const fillers = Object.values(this.fillerBuffers);
-    const filler = fillers[this.fillerIndex % fillers.length];
-    this.fillerIndex++;
-
+    const filler = this.fillerBuffers[this.currentFillerIndex];
+    this.currentFillerIndex = (this.currentFillerIndex + 1) % this.fillerBuffers.length;
     return filler;
-  }
-
-  /**
-   * Get statistics for this hedge engine session
-   * @returns {Object}
-   */
-  getStats() {
-    return {
-      callId: this.callId,
-      fillerPlayed: this.fillerPlayed,
-      fillerCount: this.fillerIndex,
-      timingsLog: this.timingsLog
-    };
   }
 
   /**
    * Clean up resources
    */
   close() {
-    if (this.hedgeTimer) {
-      clearTimeout(this.hedgeTimer);
-    }
-    console.log(`🛑 [${this.callId}] Hedge engine closed`);
+    this.stopFillerPlayback();
+    this.fillerBuffers = [];
+    this.removeAllListeners();
+  }
+
+  /**
+   * Get status information
+   *
+   * @returns {Object}
+   */
+  getStatus() {
+    return {
+      callId: this.callId,
+      agentId: this.agentId,
+      fillerCount: this.fillerBuffers ? this.fillerBuffers.length : 0,
+      isPlaying: this.isPlaying,
+      timeSinceLastAudio: this.lastGeminiAudioTime ? Date.now() - this.lastGeminiAudioTime : null
+    };
   }
 }
-
-// Simple event emitter mixin
-HedgeEngine.prototype.emit = function(eventName, data) {
-  if (!this._listeners) this._listeners = {};
-  const listeners = this._listeners[eventName] || [];
-  listeners.forEach(cb => cb(data));
-};
-
-HedgeEngine.prototype.on = function(eventName, callback) {
-  if (!this._listeners) this._listeners = {};
-  if (!this._listeners[eventName]) this._listeners[eventName] = [];
-  this._listeners[eventName].push(callback);
-};
-
-// Static cache for filler buffers
-HedgeEngine.fillerCache = null;
-
-export default HedgeEngine;
