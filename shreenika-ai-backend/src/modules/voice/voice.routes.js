@@ -8,10 +8,11 @@
  * Date: 2026-02-23
  */
 
-const express = require('express');
+import express from 'express';
+import VoiceController from '../../controllers/voice.controller.js';
+import auth from '../../middleware/auth.middleware.js'; // Assuming auth middleware exists
+
 const router = express.Router();
-const VoiceController = require('../controllers/voice.controller');
-const auth = require('../middleware/auth.middleware'); // Assuming auth middleware exists
 
 /**
  * POST /voice/call/init
@@ -128,4 +129,4 @@ router.use((error, req, res, next) => {
   });
 });
 
-module.exports = router;
+export default router;

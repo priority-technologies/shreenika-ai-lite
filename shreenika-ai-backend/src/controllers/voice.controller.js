@@ -543,4 +543,4 @@ class VoiceController {
   }
 }
 
-module.exports = VoiceController;
+export default VoiceController;
