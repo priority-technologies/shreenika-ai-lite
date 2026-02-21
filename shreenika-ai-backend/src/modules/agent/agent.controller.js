@@ -1,5 +1,4 @@
 import Agent from "./agent.model.js";
-import Subscription from "../billing/subscription.model.js";
 
 // Helper: Flatten nested agent schema to flat frontend format
 const flattenAgent = (agent) => ({
@@ -148,6 +147,10 @@ const restructurePayload = (b) => {
 ========================= */
 export const createAgent = async (req, res) => {
   try {
+    console.log("🔄 CREATE AGENT: Starting...");
+    console.log("   User ID:", req.user?._id);
+    console.log("   Received data keys:", Object.keys(req.body));
+
     // Accept both Agent format (name, prompt) and SmartAgent format (agentName, systemPrompt)
     const name = req.body.name || req.body.agentName;
     const prompt = req.body.prompt || req.body.systemPrompt;
@@ -156,49 +159,21 @@ export const createAgent = async (req, res) => {
       return res.status(400).json({ error: "name/agentName and prompt/systemPrompt are required" });
     }
 
+    console.log("   ✅ Validation passed");
+
     const structured = restructurePayload(req.body);
     structured.userId = req.user._id;
 
-    // BUG 2.3 FIX (2026-02-20): Apply safe defaults for Starter Plan users
-    // Starter Plan users get conservative voice settings to prevent random/wild responses
-    const subscription = await Subscription.findOne({ userId: req.user._id });
-    const userPlan = subscription?.plan || "Starter";
-
-    if (userPlan === "Starter") {
-      console.log(`📋 Starter Plan agent created - Applying conservative voice defaults`);
-
-      // Initialize speechSettings if not provided
-      if (!structured.speechSettings) {
-        structured.speechSettings = {};
-      }
-
-      // Lock emotion level to 0.5 (neutral) for Starter Plan
-      // This prevents the AI from becoming too energetic or unpredictable
-      structured.speechSettings.emotions = 0.5;
-
-      // Set responsive but careful: 0.5 (balanced, not too quick/impulsive)
-      if (structured.speechSettings.responsiveness === undefined) {
-        structured.speechSettings.responsiveness = 0.5;
-      }
-
-      // Set voice speed to normal (1.0) for clarity
-      if (structured.speechSettings.voiceSpeed === undefined) {
-        structured.speechSettings.voiceSpeed = 1.0;
-      }
-
-      console.log(`   ✅ Voice defaults locked for Starter Plan:`);
-      console.log(`      ├─ Emotion Level: 0.5 (neutral/calm)`);
-      console.log(`      ├─ Responsiveness: 0.5 (balanced)`);
-      console.log(`      └─ Voice Speed: 1.0x (normal)`);
-      console.log(`   💡 User can upgrade to Pro Plan for more customization`);
-    } else {
-      console.log(`✅ ${userPlan} Plan agent created - Full voice customization available`);
-    }
+    console.log("   ✅ Payload restructured");
+    console.log("   Structured data keys:", Object.keys(structured));
 
     const agent = await Agent.create(structured);
+    console.log("   ✅ Agent created in database:", agent._id);
+
     res.status(201).json(flattenAgent(agent));
   } catch (err) {
-    console.error("CREATE AGENT ERROR:", err);
+    console.error("❌ CREATE AGENT ERROR:", err.message);
+    console.error("   Stack:", err.stack);
     res.status(500).json({ error: err.message });
   }
 };
@@ -264,29 +239,14 @@ export const getAgentById = async (req, res) => {
 ========================= */
 export const updateAgent = async (req, res) => {
   try {
+    console.log("🔄 UPDATE AGENT: Starting...");
+    console.log("   Agent ID:", req.params.id);
+    console.log("   User ID:", req.user._id);
+    console.log("   Received data keys:", Object.keys(req.body));
+
     const updateData = restructurePayload(req.body);
-
-    console.log("DEBUG: updateAgent called");
-    console.log("DEBUG: Agent ID:", req.params.id);
-    console.log("DEBUG: User ID:", req.user._id);
-    console.log("DEBUG: Update Data:", JSON.stringify(updateData, null, 2));
-
-    // BUG 2.3 FIX (2026-02-20): Enforce Starter Plan voice restrictions on update
-    const subscription = await Subscription.findOne({ userId: req.user._id });
-    const userPlan = subscription?.plan || "Starter";
-
-    if (userPlan === "Starter") {
-      // For Starter Plan, force emotion level back to 0.5 (neutral)
-      // This prevents users from manually increasing it to unsafe levels
-      if (updateData.speechSettings) {
-        const originalEmotions = updateData.speechSettings.emotions;
-        updateData.speechSettings.emotions = 0.5;
-
-        if (originalEmotions !== undefined && originalEmotions !== 0.5) {
-          console.log(`🛡️  Starter Plan protection: Emotion level locked to 0.5 (user tried: ${originalEmotions})`);
-        }
-      }
-    }
+    console.log("   ✅ Payload restructured");
+    console.log("   Update data keys:", Object.keys(updateData));
 
     const agent = await Agent.findOneAndUpdate(
       { _id: req.params.id, userId: req.user._id },
@@ -295,15 +255,15 @@ export const updateAgent = async (req, res) => {
     );
 
     if (!agent) {
-      console.error("DEBUG: Agent not found for update");
+      console.error("❌ Agent not found for update");
       return res.status(404).json({ error: "Agent not found" });
     }
 
-    console.log("DEBUG: Agent updated successfully");
+    console.log("   ✅ Agent updated successfully:", agent._id);
     res.json(flattenAgent(agent));
   } catch (err) {
-    console.error("UPDATE AGENT ERROR:", err.message);
-    console.error("UPDATE AGENT FULL ERROR:", err);
+    console.error("❌ UPDATE AGENT ERROR:", err.message);
+    console.error("   Stack:", err.stack);
     res.status(500).json({ error: err.message });
   }
 };
