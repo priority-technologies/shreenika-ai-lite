@@ -1,43 +1,56 @@
 steps:
-  # Build the Docker image
+  # Step 1: Build Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
       - '-t'
-      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:latest'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:${SHORT_SHA}'
       - '.'
-    dir: 'shreenika-ai-backend'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=asia-south1'
 
-  # Push the image to Artifact Registry
+  # Step 2: Push to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:$COMMIT_SHA'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
+    env:
+      - 'CLOUDSDK_COMPUTE_ZONE=asia-south1'
 
-  # Deploy to Cloud Run with proper configuration
+  # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
       - 'shreenika-ai-backend'
-      - '--image=asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:$COMMIT_SHA'
-      - '--region=asia-south1'
-      - '--platform=managed'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
+      - '--region'
+      - 'asia-south1'
+      - '--platform'
+      - 'managed'
       - '--allow-unauthenticated'
-      - '--update-env-vars=VOIP_ENCRYPTION_KEY=default_key_32_bytes_long_123456'
-      - '--memory=512Mi'
-      - '--cpu=1'
-      - '--timeout=3600'
-      - '--max-instances=10'
+      - '--memory'
+      - '512M'
+      - '--cpu'
+      - '1'
+      - '--timeout'
+      - '3600'
+      - '--update-env-vars'
+      - 'NODE_ENV=production,ENABLE_VOICE_AGENT=true,ENABLE_FILLERS=true,VAD_SILENCE_THRESHOLD=500,AUDIO_SAMPLE_RATE=16000'
 
 images:
-  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:$COMMIT_SHA'
-  - 'asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/shreenika-ai-lite/shreenika-ai-backend:latest'
+  - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
+  - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:${SHORT_SHA}'
+
+substitutions:
+  _REGION: 'asia-south1'
+  _SERVICE: 'shreenika-ai-backend'
 
 options:
-  machineType: 'N1_HIGHCPU_2'
+  machineType: 'N1_HIGHCPU_8'
   logging: CLOUD_LOGGING_ONLY
 
-timeout: '1800s'
+timeout: '3600s'

@@ -1,15 +1,23 @@
-FROM node:20-slim
+FROM node:18-alpine
 
 WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
 
-RUN npm install
+# Install dependencies
+RUN npm install --production
 
+# Copy application code
+COPY src ./src
 COPY . .
 
-EXPOSE 8080
+# Expose port
+EXPOSE 8000
 
-ENV PORT=8080
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
 
-CMD ["node", "src/server.js"]
+# Start server
+CMD ["npm", "start"]

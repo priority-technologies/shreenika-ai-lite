@@ -43,7 +43,7 @@ const CallWorkspace: React.FC = () => {
      Rule: first created agent
   ========================= */
   const loadAgent = async () => {
-    const agents = await apiFetch("/agents");
+    const agents = await apiFetch("/api/voice/agents");
     if (Array.isArray(agents) && agents.length > 0) {
       setAgent(agents[0]); // as per your rule
     }

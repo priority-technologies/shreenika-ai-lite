@@ -1,0 +1,218 @@
+[
+  {
+    "filename": "sales_filler_1_en_liking_authority.pcm",
+    "duration": 3.96,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["LIKING", "AUTHORITY"],
+      "clientProfiles": ["EMOTIONAL", "DECISION_MAKER"],
+      "tone": "professional_warm",
+      "content_summary": "I completely understand where you're coming from. Let me share some insights from our experience...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.92,
+        "sentimentLift": 0.78,
+        "principleReinforcement": 0.85
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_2_en_reciprocity.pcm",
+    "duration": 4.52,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["RECIPROCITY"],
+      "clientProfiles": ["ANALYTICAL", "RELATIONSHIP_SEEKER"],
+      "tone": "helpful_informative",
+      "content_summary": "Let me share three immediate opportunities that could save you significant resources...",
+      "suitableFor": ["CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.88,
+        "sentimentLift": 0.75,
+        "principleReinforcement": 0.82
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_3_en_social_proof.pcm",
+    "duration": 3.18,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["SOCIAL_PROOF"],
+      "clientProfiles": ["SKEPTICAL", "ANALYTICAL"],
+      "tone": "confident_factual",
+      "content_summary": "We've helped over 500 companies in your industry achieve similar results...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.85,
+        "sentimentLift": 0.72,
+        "principleReinforcement": 0.88
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_4_en_scarcity.pcm",
+    "duration": 2.85,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["SCARCITY"],
+      "clientProfiles": ["DECISION_MAKER"],
+      "tone": "urgent_friendly",
+      "content_summary": "We have limited availability this quarter, and I have another client interested...",
+      "suitableFor": ["DECISION"],
+      "effectiveness": {
+        "completionRate": 0.79,
+        "sentimentLift": 0.68,
+        "principleReinforcement": 0.91
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_5_hinglish_liking.pcm",
+    "duration": 3.42,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["LIKING"],
+      "clientProfiles": ["EMOTIONAL", "RELATIONSHIP_SEEKER"],
+      "tone": "warm_conversational",
+      "content_summary": "Acha, main samajhta hoon aapki concern. Humne bahut saare clients ko isi situation se nikala hai...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.90,
+        "sentimentLift": 0.81,
+        "principleReinforcement": 0.84
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_6_hinglish_authority.pcm",
+    "duration": 4.08,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["AUTHORITY"],
+      "clientProfiles": ["ANALYTICAL", "SKEPTICAL"],
+      "tone": "confident_credible",
+      "content_summary": "Humara 15 years ka experience aur 5000+ successful clients hain. Data dekhta hoon toh pattern clear hai...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.87,
+        "sentimentLift": 0.74,
+        "principleReinforcement": 0.89
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_7_hinglish_reciprocity.pcm",
+    "duration": 3.65,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["RECIPROCITY"],
+      "clientProfiles": ["ANALYTICAL", "DECISION_MAKER"],
+      "tone": "helpful_generous",
+      "content_summary": "Mujhe ek case study dikhaun jo exactly aapke jaise situation ke liye hai. Bilkul free, koi obligation nahi...",
+      "suitableFor": ["CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.86,
+        "sentimentLift": 0.76,
+        "principleReinforcement": 0.83
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_8_hinglish_social_proof.pcm",
+    "duration": 3.31,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["SOCIAL_PROOF"],
+      "clientProfiles": ["SKEPTICAL"],
+      "tone": "factual_reassuring",
+      "content_summary": "Real estate mein 500+ successful transactions, lakin aapka situation unique ho sakta hai. Dekhte hain...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION"],
+      "effectiveness": {
+        "completionRate": 0.83,
+        "sentimentLift": 0.70,
+        "principleReinforcement": 0.86
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_9_en_thinking_pause.pcm",
+    "duration": 2.15,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["LIKING", "COMMITMENT"],
+      "clientProfiles": ["ANALYTICAL", "RELATIONSHIP_SEEKER"],
+      "tone": "thoughtful_attentive",
+      "content_summary": "Hmm, that's a great point. Let me think about the best way to address that...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION", "DECISION"],
+      "effectiveness": {
+        "completionRate": 0.94,
+        "sentimentLift": 0.73,
+        "principleReinforcement": 0.72
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_10_hinglish_commitment.pcm",
+    "duration": 2.88,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["COMMITMENT"],
+      "clientProfiles": ["DECISION_MAKER"],
+      "tone": "progressive_actionable",
+      "content_summary": "Acha, to aap already soch rahe ho ki kya karna hai. Ek choti step lo aur dekhte hain...",
+      "suitableFor": ["CONSIDERATION", "DECISION"],
+      "effectiveness": {
+        "completionRate": 0.89,
+        "sentimentLift": 0.77,
+        "principleReinforcement": 0.87
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_11_en_acknowledgment.pcm",
+    "duration": 2.42,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["English"],
+      "principles": ["LIKING"],
+      "clientProfiles": ["EMOTIONAL"],
+      "tone": "empathetic_validating",
+      "content_summary": "I really appreciate you sharing that concern. It's something many of our clients have felt too...",
+      "suitableFor": ["AWARENESS", "CONSIDERATION", "DECISION"],
+      "effectiveness": {
+        "completionRate": 0.91,
+        "sentimentLift": 0.82,
+        "principleReinforcement": 0.81
+      }
+    }
+  },
+  {
+    "filename": "sales_filler_12_hinglish_reassurance.pcm",
+    "duration": 3.07,
+    "format": "PCM 16-bit 16kHz mono",
+    "metadata": {
+      "languages": ["Hinglish"],
+      "principles": ["LIKING", "AUTHORITY"],
+      "clientProfiles": ["EMOTIONAL", "SKEPTICAL"],
+      "tone": "warm_reassuring",
+      "content_summary": "Bilkul secure ho sakte ho. Humari team hamesha aapke side mein hai aur guarantee hai...",
+      "suitableFor": ["CONSIDERATION", "DECISION"],
+      "effectiveness": {
+        "completionRate": 0.88,
+        "sentimentLift": 0.80,
+        "principleReinforcement": 0.85
+      }
+    }
+  }
+]

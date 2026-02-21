@@ -75,27 +75,27 @@ export const apiFetch = async (
 // AGENT MANAGEMENT APIs (CORE)
 // ==============================
 export const getAgents = () =>
-  apiFetch("/api/agents", undefined, "core");
+  apiFetch("/api/voice/agents", undefined, "core");
 
 export const createAgent = (payload: any) =>
-  apiFetch("/api/agents", {
+  apiFetch("/api/voice/agents", {
     method: "POST",
     body: JSON.stringify(payload),
   }, "core");
 
 export const updateAgent = (id: string, payload: any) =>
-  apiFetch(`/api/agents/${id}`, {
+  apiFetch(`/api/voice/agents/${id}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   }, "core");
 
 export const deleteAgent = (id: string) =>
-  apiFetch(`/api/agents/${id}`, {
+  apiFetch(`/api/voice/agents/${id}`, {
     method: "DELETE",
   }, "core");
 
 export const getAgentById = (id: string) =>
-  apiFetch(`/api/agents/${id}`, undefined, "core");
+  apiFetch(`/api/voice/agents/${id}`, undefined, "core");
 
 // ==============================
 // KNOWLEDGE BASE APIs (CORE)

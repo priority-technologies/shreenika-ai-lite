@@ -76,7 +76,7 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
 
       const token = localStorage.getItem('token');
       const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-      const response = await fetch(`${apiBase}/api/test-agent/start`, {
+      const response = await fetch(`${apiBase}/api/voice/test-agent/start`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -320,7 +320,7 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       try {
         const token = localStorage.getItem('token');
         const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-        await fetch(`${apiBase}/api/test-agent/${sessionIdRef.current}/end`, {
+        await fetch(`${apiBase}/api/voice/test-agent/${sessionIdRef.current}/end`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`
