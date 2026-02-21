@@ -35,8 +35,21 @@ const mapVoicemailAction = (val) => {
 };
 
 const mapBackgroundNoise = (val) => {
-  const map = { "Office": "office", "Quiet": "quiet", "Cafe": "cafe", "Street": "street", "Call Center": "call-center", "None": "office" };
+  const map = { "Office": "office", "Quiet": "quiet", "Cafe": "cafe", "Street": "street", "Call Center": "call-center", "None": "office", "minimal": "quiet", "none": "office" };
   return map[val] || (val ? val.toLowerCase() : "office");
+};
+
+// Map responsiveness string values to 0-1 numeric range
+const mapResponsiveness = (val) => {
+  if (typeof val === 'number') return Math.min(Math.max(val, 0), 1); // Clamp to 0-1
+  const map = { "slow": 0.25, "thoughtful": 0.25, "balanced": 0.5, "quick": 0.75, "fast": 0.9 };
+  return map[val] !== undefined ? map[val] : 0.5; // Default to balanced
+};
+
+// Map interruptionSensitivity string values to 0-1 numeric range
+const mapInterruptionSensitivity = (val) => {
+  if (typeof val === 'number') return Math.min(Math.max(val, 0), 1); // Clamp to 0-1
+  return typeof val === 'string' ? 0.5 : val; // If string, treat as default; otherwise use numeric
 };
 
 // Defensive language code mapping (handles legacy display-name values and new code values)
@@ -106,8 +119,8 @@ const restructurePayload = (b) => {
 
     // Agent format fields
     if (b.voiceSpeed !== undefined) data.speechSettings.voiceSpeed = b.voiceSpeed;
-    if (b.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = b.interruptionSensitivity;
-    if (b.responsiveness !== undefined) data.speechSettings.responsiveness = b.responsiveness;
+    if (b.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = mapInterruptionSensitivity(b.interruptionSensitivity);
+    if (b.responsiveness !== undefined) data.speechSettings.responsiveness = mapResponsiveness(b.responsiveness);
     if (b.emotionLevel !== undefined) data.speechSettings.emotions = b.emotionLevel;
     if (b.backgroundNoise !== undefined) data.speechSettings.backgroundNoise = mapBackgroundNoise(b.backgroundNoise);
 
@@ -121,8 +134,8 @@ const restructurePayload = (b) => {
     // SmartAgent format fields (from speechSettings)
     if (hasSmartSpeechSettings) {
       if (b.speechSettings.voiceSpeed !== undefined) data.speechSettings.voiceSpeed = b.speechSettings.voiceSpeed;
-      if (b.speechSettings.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = b.speechSettings.interruptionSensitivity;
-      if (b.speechSettings.responsiveness !== undefined) data.speechSettings.responsiveness = b.speechSettings.responsiveness;
+      if (b.speechSettings.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = mapInterruptionSensitivity(b.speechSettings.interruptionSensitivity);
+      if (b.speechSettings.responsiveness !== undefined) data.speechSettings.responsiveness = mapResponsiveness(b.speechSettings.responsiveness);
       if (b.speechSettings.backgroundNoise !== undefined) data.speechSettings.backgroundNoise = mapBackgroundNoise(b.speechSettings.backgroundNoise);
     }
   }
