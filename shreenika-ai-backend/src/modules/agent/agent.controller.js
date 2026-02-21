@@ -55,35 +55,77 @@ const mapLanguageToCode = (val) => {
 };
 
 // Restructure flat frontend payload into nested backend schema
+// Handles both Agent format (name, title, prompt) and SmartAgent format (agentName, agentRole, systemPrompt)
 const restructurePayload = (b) => {
   const data = {};
 
-  // Flat fields
+  // Flat fields - Handle BOTH Agent format AND SmartAgent format
+  // Agent format: name, title, prompt, welcomeMessage
+  // SmartAgent format: agentName, agentRole, systemPrompt
   if (b.name !== undefined) data.name = b.name;
+  if (b.agentName !== undefined) data.name = b.agentName; // SmartAgent → Agent mapping
+
   if (b.title !== undefined) data.title = b.title;
+  if (b.agentRole !== undefined) data.title = b.agentRole; // SmartAgent → Agent mapping
+
   if (b.avatar !== undefined) data.avatar = b.avatar;
   if (b.prompt !== undefined) data.prompt = b.prompt;
+  if (b.systemPrompt !== undefined) data.prompt = b.systemPrompt; // SmartAgent → Agent mapping
+
   if (b.welcomeMessage !== undefined) data.welcomeMessage = b.welcomeMessage;
   if (b.characteristics !== undefined) data.characteristics = b.characteristics;
   if (b.knowledgeBase !== undefined) data.knowledgeBase = b.knowledgeBase;
 
   // Voice Profile (nested)
-  if (b.voiceId !== undefined || b.language !== undefined) {
+  // Handle both: voiceId/language (Agent) and voiceCharacteristics/primaryLanguage (SmartAgent)
+  let hasVoiceProfile = false;
+  let voiceIdToUse = b.voiceId;
+  let languageToUse = b.language || b.primaryLanguage; // SmartAgent uses primaryLanguage
+
+  // SmartAgent voiceCharacteristics object (ignore for voiceProfile, it's handled in speechSettings)
+  if (b.voiceCharacteristics) {
+    // voiceCharacteristics is more complex in SmartAgent, but voiceProfile is simpler in Agent
+    // For now, we just use the basic voiceId
+  }
+
+  if (voiceIdToUse !== undefined || languageToUse !== undefined) {
     data.voiceProfile = {};
-    if (b.voiceId !== undefined) data.voiceProfile.voiceId = b.voiceId;
-    if (b.language !== undefined) data.voiceProfile.language = mapLanguageToCode(b.language);
+    if (voiceIdToUse !== undefined) data.voiceProfile.voiceId = voiceIdToUse;
+    if (languageToUse !== undefined) data.voiceProfile.language = mapLanguageToCode(languageToUse);
   }
 
   // Speech Settings (nested, with field name mapping)
+  // Handle both formats: voiceSpeed, emotionLevel (agent) and voiceCharacteristics.emotionLevel (smart)
+  const hasSmartVoiceChars = b.voiceCharacteristics && typeof b.voiceCharacteristics === 'object';
+  const hasSmartSpeechSettings = b.speechSettings && typeof b.speechSettings === 'object';
+
   if (b.voiceSpeed !== undefined || b.interruptionSensitivity !== undefined ||
       b.responsiveness !== undefined || b.emotionLevel !== undefined ||
-      b.backgroundNoise !== undefined) {
+      b.backgroundNoise !== undefined ||
+      hasSmartVoiceChars || hasSmartSpeechSettings) {
     data.speechSettings = {};
+
+    // Agent format fields
     if (b.voiceSpeed !== undefined) data.speechSettings.voiceSpeed = b.voiceSpeed;
     if (b.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = b.interruptionSensitivity;
     if (b.responsiveness !== undefined) data.speechSettings.responsiveness = b.responsiveness;
     if (b.emotionLevel !== undefined) data.speechSettings.emotions = b.emotionLevel;
     if (b.backgroundNoise !== undefined) data.speechSettings.backgroundNoise = mapBackgroundNoise(b.backgroundNoise);
+
+    // SmartAgent format fields (from voiceCharacteristics)
+    if (hasSmartVoiceChars) {
+      if (b.voiceCharacteristics.emotionLevel !== undefined) {
+        data.speechSettings.emotions = b.voiceCharacteristics.emotionLevel;
+      }
+    }
+
+    // SmartAgent format fields (from speechSettings)
+    if (hasSmartSpeechSettings) {
+      if (b.speechSettings.voiceSpeed !== undefined) data.speechSettings.voiceSpeed = b.speechSettings.voiceSpeed;
+      if (b.speechSettings.interruptionSensitivity !== undefined) data.speechSettings.interruptionSensitivity = b.speechSettings.interruptionSensitivity;
+      if (b.speechSettings.responsiveness !== undefined) data.speechSettings.responsiveness = b.speechSettings.responsiveness;
+      if (b.speechSettings.backgroundNoise !== undefined) data.speechSettings.backgroundNoise = mapBackgroundNoise(b.speechSettings.backgroundNoise);
+    }
   }
 
   // Call Settings (nested, with enum mapping)
@@ -106,8 +148,12 @@ const restructurePayload = (b) => {
 ========================= */
 export const createAgent = async (req, res) => {
   try {
-    if (!req.body.name || !req.body.prompt) {
-      return res.status(400).json({ error: "name and prompt are required" });
+    // Accept both Agent format (name, prompt) and SmartAgent format (agentName, systemPrompt)
+    const name = req.body.name || req.body.agentName;
+    const prompt = req.body.prompt || req.body.systemPrompt;
+
+    if (!name || !prompt) {
+      return res.status(400).json({ error: "name/agentName and prompt/systemPrompt are required" });
     }
 
     const structured = restructurePayload(req.body);
