@@ -208,11 +208,13 @@ export class VoiceService extends EventEmitter {
       console.log(`🎤 Gemini session ready: ${sessionId}`);
       this.isReady = true;
 
-      // Send welcome message if configured
-      if (this.agent.welcomeMessage) {
-        console.log(`👋 Sending welcome message`);
-        this.geminiSession.sendText(this.agent.welcomeMessage);
-      }
+      // DISABLED: Welcome message causes 2-3 second latency
+      // Agent now responds naturally to first user input without explicit greeting
+      // This reduces initial latency from 6s to <2s
+      // if (this.agent.welcomeMessage) {
+      //   console.log(`👋 Sending welcome message`);
+      //   this.geminiSession.sendText(this.agent.welcomeMessage);
+      // }
     });
 
     // Audio response from Gemini
