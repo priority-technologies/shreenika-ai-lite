@@ -597,38 +597,23 @@ export class GeminiLiveSession extends EventEmitter {
   }
 
   /**
-   * Update system instruction during active session (PHASE 6)
-   * Allows dynamic system prompt changes without reconnecting
-   * Used to inject psychology-aware principles into Gemini
-   * @param {string} newSystemInstruction - New system instruction text
+   * Update system instruction during active session - DISABLED
+   *
+   * ⚠️ CRITICAL: Gemini Live API does NOT support mid-session system instruction changes
+   * Attempting to update causes:
+   * - 5+ second connection delays
+   * - Failed responses after user input
+   * - Dropped turns
+   *
+   * System instruction must be set at session creation and kept static throughout
+   *
+   * @deprecated Do not call this method
    */
   updateSystemInstruction(newSystemInstruction) {
-    try {
-      this.systemInstruction = newSystemInstruction;
-
-      // Send system instruction update via WebSocket if connected
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        // Create a new setup message with updated instruction
-        const updateMessage = {
-          setup: {
-            modelType: 'TYPE_GENERATIVE',
-            generationConfig: {
-              candidateCount: 1,
-              maxOutputTokens: 1024
-            },
-            systemInstruction: {
-              parts: [{ text: newSystemInstruction }]
-            },
-            tools: []
-          }
-        };
-
-        this._send(updateMessage);
-        console.log(`✨ System instruction updated (${newSystemInstruction.length} chars)`);
-      }
-    } catch (err) {
-      console.warn(`⚠️ Failed to update system instruction:`, err.message);
-    }
+    // DISABLED: This breaks Gemini Live connections
+    // Just log and return without making any changes
+    console.warn(`⚠️ updateSystemInstruction() disabled - Gemini Live doesn't support mid-session updates`);
+    return;
   }
 
   /**

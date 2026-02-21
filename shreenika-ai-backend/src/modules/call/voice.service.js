@@ -435,54 +435,39 @@ export class VoiceService extends EventEmitter {
   }
 
   /**
-   * Update psychological principle and system prompt (PHASE 6)
-   * Called after each Gemini turn to update system prompt based on conversation context
+   * Update psychological principle and track context (PHASE 6 - ANALYSIS ONLY)
+   * Analyzes conversation for psychology insights but doesn't interrupt Gemini session
+   * NOTE: Gemini Live API does NOT support mid-session system instruction updates
    * @private
    */
   _updatePrincipleAndPrompt() {
     try {
-      const now = Date.now();
-      // Throttle prompt updates to every 3 seconds (avoid excessive updates)
-      if (now - this.lastPromptUpdateTime < 3000) {
-        return;
-      }
-      this.lastPromptUpdateTime = now;
-
-      // Get conversation context
+      // Get conversation context for analysis
       const conversationContext = this.conversationAnalyzer.getConversationContext(
         this.conversationTurns,
-        { duration: now - this.startTime }
+        { duration: Date.now() - this.startTime }
       );
 
-      // Decide principle based on context
+      // Decide principle based on context (for monitoring/statistics only)
       const principleDecision = this.principleDecisionEngine.decidePrinciple(conversationContext);
 
-      // Log principle update if changed
+      // Log principle for debugging/monitoring
       if (this.currentPrinciple !== principleDecision.primary) {
         this.currentPrinciple = principleDecision.primary;
-        console.log(`🧠 Principle decision: ${this.currentPrinciple} (Priority: ${principleDecision.priority})`);
-        console.log(`   └─ Reasoning: ${principleDecision.reasoning}`);
+        console.log(`🧠 Principle detected: ${this.currentPrinciple} (Priority: ${principleDecision.priority})`);
 
-        // Update HedgeEngineV2 with new principle
+        // Update HedgeEngineV2 principle for intelligent filler selection ONLY
+        // This affects filler choice, NOT Gemini's response
         this.hedgeEngineV2.updatePrinciple(principleDecision);
+        console.log(`   └─ HedgeEngineV2: intelligent fillers now support ${this.currentPrinciple}`);
       }
 
-      // Build dynamic system prompt with principle injection
-      const knowledgeDocs = this.agent.knowledgeBase || '';
-      const enhancedPrompt = this.promptBuilder.buildPrompt(
-        this.agent,
-        knowledgeDocs,
-        principleDecision,
-        conversationContext
-      );
-
-      // Update Gemini session system instruction with enhanced prompt
-      if (this.geminiSession && this.geminiSession.updateSystemInstruction) {
-        this.geminiSession.updateSystemInstruction(enhancedPrompt);
-        console.log(`✨ System prompt updated with ${this.currentPrinciple} principle`);
-      }
+      // ⚠️ DISABLED: Dynamic system instruction updates
+      // Gemini Live does not support system instruction changes during active sessions
+      // Attempting to update breaks the connection (causes 5+ second delays)
+      // System prompt is set once at session creation and remains static
     } catch (err) {
-      console.warn('⚠️ Failed to update principle/prompt:', err.message);
+      console.warn('⚠️ Failed to analyze principle:', err.message);
     }
   }
 
