@@ -10,7 +10,7 @@
 
 import express from 'express';
 import VoiceController from '../../controllers/voice.controller.js';
-import auth from '../../middleware/auth.middleware.js'; // Assuming auth middleware exists
+import auth from '../auth/auth.middleware.js';
 
 const router = express.Router();
 
