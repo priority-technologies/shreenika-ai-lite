@@ -248,30 +248,38 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
   }
     
     try {
-      // Create new agent via API
+      // Create new agent via API - SMART AGENT SCHEMA
       const newAgentData = {
-        name: 'New Agent',
-        title: 'Untitled Role',
-        avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=NewAgent',
-        prompt: 'You are a helpful AI agent. Customize this prompt to define your role and behavior.',
-        welcomeMessage: 'Hello! How can I help you today?',
-        characteristics: ['Helpful', 'Professional'],
-        language: 'English',
-        voiceId: 'voice_1', // Default to Adit voice
-        callStartBehavior: 'waitForHuman',
-        maxCallDuration: 300,
-        voicemailDetection: false,
-        voicemailAction: 'Hang up',
-        voicemailMessage: '',
-        silenceDetectionMs: 30,
-        voiceSpeed: 1.0,
-        interruptionSensitivity: 0.5,
-        responsiveness: 0.5,
-        emotionLevel: 0.5,
-        backgroundNoise: 'None',
+        agentName: 'New Agent',
+        agentRole: 'Sales',
+        agentPersonality: 'Helpful and professional AI agent',
+        primaryLanguage: 'English',
+        targetAudience: 'General users',
+        industryContext: 'General',
+        primaryObjective: 'Provide Assistance',
+        conversationStyle: 'Professional',
+        handlingApproach: 'Listen and respond helpfully',
+        meetingBookingFlow: false,
+        callDuration: 15,
+        followupStrategy: 'Follow up via email',
+        voiceCharacteristics: {
+          trait: 'Professional',
+          emotionLevel: 0.5,
+          warmth: 'medium',
+          confidence: 'high'
+        },
+        speechSettings: {
+          voiceSpeed: 1.0,
+          responsiveness: 'balanced',
+          interruptionSensitivity: 0.5,
+          backgroundNoise: 'minimal'
+        },
+        systemPrompt: 'You are a helpful AI agent. Customize this prompt to define your role and behavior.',
+        voiceId: 'Puck',
         knowledgeBase: [],
+        status: 'Active'
       };
-      
+
       const createdAgent = await createAgent(newAgentData);
 
       // Update local list
