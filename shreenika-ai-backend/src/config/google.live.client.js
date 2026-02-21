@@ -597,6 +597,41 @@ export class GeminiLiveSession extends EventEmitter {
   }
 
   /**
+   * Update system instruction during active session (PHASE 6)
+   * Allows dynamic system prompt changes without reconnecting
+   * Used to inject psychology-aware principles into Gemini
+   * @param {string} newSystemInstruction - New system instruction text
+   */
+  updateSystemInstruction(newSystemInstruction) {
+    try {
+      this.systemInstruction = newSystemInstruction;
+
+      // Send system instruction update via WebSocket if connected
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // Create a new setup message with updated instruction
+        const updateMessage = {
+          setup: {
+            modelType: 'TYPE_GENERATIVE',
+            generationConfig: {
+              candidateCount: 1,
+              maxOutputTokens: 1024
+            },
+            systemInstruction: {
+              parts: [{ text: newSystemInstruction }]
+            },
+            tools: []
+          }
+        };
+
+        this._send(updateMessage);
+        console.log(`✨ System instruction updated (${newSystemInstruction.length} chars)`);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Failed to update system instruction:`, err.message);
+    }
+  }
+
+  /**
    * Close the session
    */
   close() {
