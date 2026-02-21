@@ -21,7 +21,6 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import aiRoutes from "./modules/ai/ai.routes.js";
 import contactRoutes from "./modules/contacts/contact.routes.js";
 import voipRoutes from "./modules/voip/voip.routes.js";
-import voiceRoutes from "./modules/voice/voice.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import webhookRoutes from "./modules/webhook/webhook.routes.js";
@@ -142,9 +141,10 @@ app.use("/calls", callRoutes);
 app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
-app.use("/api/voice", voiceRoutes);
 app.use("/webhooks", webhookRoutes);
+// Agent routes available at both paths for compatibility
 app.use("/api/agents", agentRoutes);
+app.use("/api/voice/agents", agentRoutes); // Voice agents endpoint
 app.use("/api/test-agent", testAgentRoutes);
 app.use("/settings/api-keys", apiKeyRoutes);
 app.use("/api/v1", apiV1Routes);
