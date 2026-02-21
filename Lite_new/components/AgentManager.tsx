@@ -175,22 +175,34 @@ const AgentManager: React.FC<AgentManagerProps> = ({ agent, setAgent, navigate }
     try {
       setIsSaving(true);
 
-      // Call backend API to update agent
-      const updatedAgent = await updateAgent(localAgent.id, localAgent);
+      let savedAgent;
+
+      // Check if this is a NEW agent or EXISTING agent
+      if (!localAgent.id || localAgent.id === 'new') {
+        // NEW AGENT: Call createAgent
+        console.log('📝 Creating new agent...');
+        savedAgent = await createAgent(localAgent);
+
+        // Add to list
+        setAgentList(prev => [...prev, savedAgent]);
+      } else {
+        // EXISTING AGENT: Call updateAgent
+        console.log('✏️ Updating existing agent...');
+        savedAgent = await updateAgent(localAgent.id, localAgent);
+
+        // Update local list
+        setAgentList(prev =>
+          prev.map(a => a.id === localAgent.id ? savedAgent : a)
+        );
+      }
 
       // Update parent component state
-      setAgent(updatedAgent);
-
-      // Update local list
-      setAgentList(prev =>
-        prev.map(a => a.id === localAgent.id ? updatedAgent : a)
-      );
-      
+      setAgent(savedAgent);
       setIsSaved(true);
-      
+
       // Visual feedback
       setTimeout(() => setIsSaved(false), 3000);
-      
+
     } catch (error) {
       console.error('Failed to save agent:', error);
       alert('Failed to save agent. Please try again.');
