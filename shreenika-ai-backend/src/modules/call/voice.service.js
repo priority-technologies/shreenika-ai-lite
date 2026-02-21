@@ -22,12 +22,6 @@ import { sharedCachingService } from '../voice/context-caching.service.js';
 import LatencyTracker from '../voice/latency-tracker.service.js';
 import { enhanceResponseForLatency } from '../voice/response-enhancer.service.js';
 import HedgeEngine from '../voice/hedge-engine.service.js';
-// Psychology-Aware Voice System (Phase 6 Integration)
-import { ConversationAnalyzer } from '../voice/conversation-analyzer.service.js';
-import { PrincipleDecisionEngine } from '../voice/principle-decision-engine.service.js';
-import { SystemPromptInjector } from '../voice/system-prompt-injector.service.js';
-import HedgeEngineV2 from '../voice/hedge-engine-v2.service.js';
-import { PsychologyAwarePromptBuilder } from '../voice/psychology-aware-prompt-builder.service.js';
 import { io } from '../../server.js';
 
 /**
@@ -48,16 +42,7 @@ export class VoiceService extends EventEmitter {
     this.geminiSession = null;
     this.voiceCustomization = null; // Voice customization service
     this.latencyTracker = new LatencyTracker(callId, agentId); // Track latency
-    this.hedgeEngine = new HedgeEngine(callId, agentId); // Latency masking (Hedge Engine V1)
-
-    // Psychology-Aware Voice System (Phase 6 Integration)
-    this.conversationAnalyzer = new ConversationAnalyzer(); // Real-time conversation analysis
-    this.principleDecisionEngine = new PrincipleDecisionEngine(); // Psychological principle selection
-    this.systemPromptInjector = new SystemPromptInjector(); // System prompt injection
-    this.hedgeEngineV2 = new HedgeEngineV2(callId, agentId); // Intelligent filler selection
-    this.promptBuilder = new PsychologyAwarePromptBuilder(); // Dynamic prompt building
-    this.currentPrinciple = null; // Track current principle
-    this.lastPromptUpdateTime = 0; // Throttle prompt updates
+    this.hedgeEngine = new HedgeEngine(callId, agentId); // Latency masking (Hedge Engine)
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -106,7 +91,7 @@ export class VoiceService extends EventEmitter {
       console.log(`   ├─ Voice Speed: ${voiceProfile.voiceSpeed.toFixed(2)}x`);
       console.log(`   └─ Background Noise: ${voiceProfile.backgroundNoise}`);
 
-      // Initialize Hedge Engine V1 with filler audio (Legacy)
+      // Initialize Hedge Engine with filler audio
       try {
         this.hedgeEngine.fillerBuffers = await HedgeEngine.initializeFillers();
         this.hedgeEngine.on('playFiller', (fillerBuffer) => {
@@ -116,23 +101,9 @@ export class VoiceService extends EventEmitter {
             this.emit('audio', fillerBuffer);
           }
         });
-        console.log(`🎯 Hedge Engine V1 initialized (legacy latency masking)`);
+        console.log(`🎯 Hedge Engine initialized (400ms latency masking)`);
       } catch (err) {
-        console.warn('⚠️ Hedge Engine V1 setup failed:', err.message);
-      }
-
-      // Initialize Hedge Engine V2 with intelligent filler selection (PHASE 6)
-      try {
-        this.hedgeEngineV2.fillerBuffers = await HedgeEngineV2.initializeFillers();
-        this.hedgeEngineV2.on('playFiller', (fillerData) => {
-          if (fillerData && fillerData.buffer) {
-            console.log(`✨ Playing intelligent filler: Language=${fillerData.metadata?.languages?.join('/')}, Principle=${fillerData.metadata?.principles?.join('/')}`);
-            this.emit('audio', fillerData.buffer);
-          }
-        });
-        console.log(`✨ Hedge Engine V2 initialized (intelligent latency masking with psychology awareness)`);
-      } catch (err) {
-        console.warn('⚠️ Hedge Engine V2 setup failed:', err.message);
+        console.warn('⚠️ Hedge Engine setup failed:', err.message);
       }
 
       // Fetch knowledge documents from DB for this agent
@@ -247,10 +218,9 @@ export class VoiceService extends EventEmitter {
     // Audio response from Gemini
     this.geminiSession.on('audio', (audioBuffer) => {
       this.audioChunksReceived++;
-      // Mark Gemini audio received for Hedge Engines
+      // Mark Gemini audio received for Hedge Engine
       if (this.audioChunksReceived === 1) {
-        this.hedgeEngine.markGeminiAudioReceived(); // V1 Legacy
-        this.hedgeEngineV2.markGeminiAudioReceived(); // V2 Psychology-Aware (PHASE 6)
+        this.hedgeEngine.markGeminiAudioReceived();
       }
       this.emit('audio', audioBuffer);
     });
@@ -263,12 +233,6 @@ export class VoiceService extends EventEmitter {
       }
 
       this.currentTurnText += text;
-
-      // PHASE 6: Track agent response for psychology-aware system
-      this.conversationAnalyzer.trackMessage({
-        text: text,
-        role: 'assistant'
-      });
     });
 
     // Turn complete (agent finished speaking)
@@ -278,9 +242,6 @@ export class VoiceService extends EventEmitter {
         const shouldEnhance = this.userSpeechStart !== null;
         this._addConversationTurn('agent', this.currentTurnText, shouldEnhance);
         this.currentTurnText = '';
-
-        // PHASE 6: Update principle and system prompt based on conversation context
-        this._updatePrincipleAndPrompt();
 
         // Reset for next turn
         this.userSpeechStart = null;
@@ -346,9 +307,8 @@ export class VoiceService extends EventEmitter {
     // User stops speaking (energy drops below threshold)
     if (energyLevel <= speechThreshold && this.userSpeechStart && !this._userSpeechEnded) {
       this._userSpeechEnded = true;
-      this.hedgeEngine.markUserSpeechEnded(); // V1 Legacy
-      this.hedgeEngineV2.markUserSpeechEnded(); // V2 Psychology-Aware (PHASE 6)
-      console.log(`🤐 User speech ended, Hedge Engines activated (V1 legacy + V2 intelligent)`);
+      this.hedgeEngine.markUserSpeechEnded();
+      console.log(`🤐 User speech ended, Hedge Engine activated`);
     }
 
     // Reset speech-ended flag when speaking resumes
@@ -371,16 +331,6 @@ export class VoiceService extends EventEmitter {
 
     // Add user turn to transcript
     this._addConversationTurn('user', text);
-
-    // PHASE 6: Track user message for psychology-aware system
-    this.conversationAnalyzer.trackMessage({
-      text: text,
-      role: 'user'
-    });
-
-    // Update context for HedgeEngineV2
-    const context = this.conversationAnalyzer.getConversationContext(this.conversationTurns);
-    this.hedgeEngineV2.updateContext(context);
 
     this.geminiSession.sendText(text);
   }
@@ -432,43 +382,6 @@ export class VoiceService extends EventEmitter {
 
     // Log
     console.log(`💬 [${role.toUpperCase()}]: ${enhancedContent.substring(0, 100)}${enhancedContent.length > 100 ? '...' : ''}`);
-  }
-
-  /**
-   * Update psychological principle and track context (PHASE 6 - ANALYSIS ONLY)
-   * Analyzes conversation for psychology insights but doesn't interrupt Gemini session
-   * NOTE: Gemini Live API does NOT support mid-session system instruction updates
-   * @private
-   */
-  _updatePrincipleAndPrompt() {
-    try {
-      // Get conversation context for analysis
-      const conversationContext = this.conversationAnalyzer.getConversationContext(
-        this.conversationTurns,
-        { duration: Date.now() - this.startTime }
-      );
-
-      // Decide principle based on context (for monitoring/statistics only)
-      const principleDecision = this.principleDecisionEngine.decidePrinciple(conversationContext);
-
-      // Log principle for debugging/monitoring
-      if (this.currentPrinciple !== principleDecision.primary) {
-        this.currentPrinciple = principleDecision.primary;
-        console.log(`🧠 Principle detected: ${this.currentPrinciple} (Priority: ${principleDecision.priority})`);
-
-        // Update HedgeEngineV2 principle for intelligent filler selection ONLY
-        // This affects filler choice, NOT Gemini's response
-        this.hedgeEngineV2.updatePrinciple(principleDecision);
-        console.log(`   └─ HedgeEngineV2: intelligent fillers now support ${this.currentPrinciple}`);
-      }
-
-      // ⚠️ DISABLED: Dynamic system instruction updates
-      // Gemini Live does not support system instruction changes during active sessions
-      // Attempting to update breaks the connection (causes 5+ second delays)
-      // System prompt is set once at session creation and remains static
-    } catch (err) {
-      console.warn('⚠️ Failed to analyze principle:', err.message);
-    }
   }
 
   /**
@@ -537,20 +450,9 @@ export class VoiceService extends EventEmitter {
         .catch(err => console.warn('⚠️  Cache TTL refresh skipped (non-critical):', err.message));
     }
 
-    // Close Hedge Engine V1 (Legacy)
+    // Close Hedge Engine
     if (this.hedgeEngine) {
       this.hedgeEngine.close();
-    }
-
-    // Close Hedge Engine V2 (Psychology-Aware) and log statistics
-    if (this.hedgeEngineV2) {
-      const v2Stats = this.hedgeEngineV2.getStatistics();
-      console.log(`📊 Hedge Engine V2 Statistics:`);
-      console.log(`   ├─ Filler playbacks: ${v2Stats.totalFillerPlaybacks}`);
-      console.log(`   ├─ Principle usage: ${JSON.stringify(v2Stats.principleUsageDistribution)}`);
-      console.log(`   ├─ Detected language: ${v2Stats.currentLanguage}`);
-      console.log(`   └─ Final principle: ${v2Stats.currentPrinciple}`);
-      this.hedgeEngineV2.close();
     }
 
     // Close Gemini session
