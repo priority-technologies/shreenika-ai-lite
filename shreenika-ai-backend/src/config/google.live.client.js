@@ -453,6 +453,15 @@ export class GeminiLiveSession extends EventEmitter {
       console.log(`   💰 90% cost savings on system instruction + knowledge base`);
     }
 
+    // 🔴 DIAGNOSTIC: Log the exact setup message being sent to Gemini
+    console.log(`\n🔧 GEMINI LIVE SETUP MESSAGE:`);
+    console.log(`   ├─ Model: ${setupMessage.setup.model}`);
+    console.log(`   ├─ Response Modalities: ${JSON.stringify(setupMessage.setup.generationConfig.responseModalities)}`);
+    console.log(`   ├─ Voice Name: ${this.voice}`);
+    console.log(`   ├─ Audio Output: ENABLED ✅`);
+    console.log(`   ├─ System Instruction: ${this.systemInstruction ? `${this.systemInstruction.length} chars` : 'OMITTED (using cache)'}`);
+    console.log(`   └─ Cache ID: ${this.cacheId || 'NONE'}\n`);
+
     this._send(setupMessage);
   }
 
@@ -465,9 +474,18 @@ export class GeminiLiveSession extends EventEmitter {
     try {
       const message = JSON.parse(data.toString());
 
+      // 🔴 DIAGNOSTIC: Log all message types from Gemini for debugging
+      const messageKeys = Object.keys(message);
+      if (!message.setupComplete && !message.serverContent && !message.toolCall) {
+        console.log(`📡 [Gemini] Unexpected message keys:`, messageKeys);
+      }
+
       // Setup complete
       if (message.setupComplete) {
         console.log('✅ Gemini Live session setup complete');
+        console.log(`   ├─ Session ID: ${message.setupComplete.sessionId}`);
+        console.log(`   ├─ Audio output: Ready to receive`);
+        console.log(`   └─ Timestamp: ${new Date().toISOString()}`);
         this.sessionId = message.setupComplete.sessionId;
         this.emit('ready', { sessionId: this.sessionId });
         return;
@@ -479,39 +497,83 @@ export class GeminiLiveSession extends EventEmitter {
 
         // Model turn complete
         if (content.turnComplete) {
+          console.log(`✅ Model turn complete - waiting for next user input`);
           this.emit('turnComplete');
           return;
         }
 
+        // 🔴 CRITICAL DIAGNOSTIC: Log all serverContent structure with detailed inspection
+        if (content.modelTurn) {
+          console.log(`\n📊 [Gemini] modelTurn received:`);
+          console.log(`   ├─ Parts count: ${content.modelTurn.parts ? content.modelTurn.parts.length : 0}`);
+          if (content.modelTurn.parts) {
+            for (let i = 0; i < content.modelTurn.parts.length; i++) {
+              const part = content.modelTurn.parts[i];
+              console.log(`   ├─ Part[${i}] type: ${part.text ? 'TEXT' : part.inlineData ? 'INLINEDATA' : 'UNKNOWN'}`);
+
+              if (part.text) {
+                const preview = part.text.substring(0, 60).replace(/\n/g, ' ');
+                console.log(`   │  ├─ Text (${part.text.length} chars): "${preview}${part.text.length > 60 ? '...' : ''}"`);
+              }
+
+              if (part.inlineData) {
+                console.log(`   │  ├─ InlineData:`);
+                console.log(`   │  │  ├─ MIME Type: ${part.inlineData.mimeType}`);
+                console.log(`   │  │  ├─ Is audio?: ${part.inlineData.mimeType?.includes('audio') ? 'YES ✅' : 'NO ❌'}`);
+                console.log(`   │  │  └─ Data length (base64): ${part.inlineData.data ? part.inlineData.data.length : 0} chars`);
+              }
+
+              // Check for unexpected fields
+              if (!part.text && !part.inlineData) {
+                console.log(`   │  └─ Fields: ${Object.keys(part).join(', ')}`);
+              }
+            }
+          }
+          console.log('');
+        }
+
         // Check for audio data
         if (content.modelTurn && content.modelTurn.parts) {
+          let audioFound = false;
           for (const part of content.modelTurn.parts) {
             // Audio response
             if (part.inlineData && part.inlineData.mimeType?.includes('audio')) {
+              audioFound = true;
               const audioData = Buffer.from(part.inlineData.data, 'base64');
+              console.log(`📥 ✅ AUDIO CHUNK RECEIVED from Gemini: ${audioData.length} bytes (base64 input: ${part.inlineData.data.length} chars)`);
               this.emit('audio', audioData);
             }
 
             // Text response (for transcript)
             if (part.text) {
+              const preview = part.text.substring(0, 50);
+              console.log(`💬 [Gemini] Text: "${preview}${part.text.length > 50 ? '...' : ''}"`);
               this.emit('text', part.text);
             }
+          }
+
+          if (!audioFound && content.modelTurn.parts.length > 0) {
+            console.warn(`⚠️ MODEL TURN RECEIVED BUT NO AUDIO FOUND - Gemini may not be outputting audio`);
           }
         }
 
         // Interrupted by user
         if (content.interrupted) {
+          console.log(`🤚 [Gemini] User interrupted agent`);
           this.emit('interrupted');
         }
       }
 
       // Tool call (for knowledge base queries)
       if (message.toolCall) {
+        console.log(`🔧 [Gemini] Tool call:`, message.toolCall.id);
         this.emit('toolCall', message.toolCall);
       }
 
     } catch (error) {
       console.error('❌ Failed to parse Gemini Live message:', error.message);
+      const messageStr = data.toString();
+      console.error(`   Raw message preview (first 300 chars): ${messageStr.substring(0, 300)}`);
       this.emit('error', error);
     }
   }
@@ -539,7 +601,18 @@ export class GeminiLiveSession extends EventEmitter {
       }
     };
 
-    this._send(message);
+    // 🔴 DIAGNOSTIC: Verify message is being sent
+    if (this.ws && this.ws.readyState === 1) { // WebSocket.OPEN = 1
+      this.ws.send(JSON.stringify(message));
+      // Log sent messages at lower verbosity
+      if (this._audioSentCount === undefined) this._audioSentCount = 0;
+      this._audioSentCount++;
+      if (this._audioSentCount <= 2) {
+        console.log(`📤 Gemini audio message sent via WebSocket (OPEN state), total sent: ${this._audioSentCount}`);
+      }
+    } else {
+      console.warn(`⚠️ WebSocket not in OPEN state - readyState=${this.ws?.readyState || 'null'}`);
+    }
   }
 
   /**

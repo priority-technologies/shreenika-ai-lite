@@ -220,10 +220,17 @@ export class VoiceService extends EventEmitter {
     // Audio response from Gemini
     this.geminiSession.on('audio', (audioBuffer) => {
       this.audioChunksReceived++;
+      // 🔴 DIAGNOSTIC: Log every audio chunk received from Gemini
+      const KB = (audioBuffer.length / 1024).toFixed(2);
+      console.log(`📥 ✅ Audio chunk #${this.audioChunksReceived} received from Gemini: ${audioBuffer.length} bytes (${KB} KB)`);
+
       // Mark Gemini audio received for Hedge Engine
       if (this.audioChunksReceived === 1) {
+        console.log(`🎯 First audio chunk from Gemini - marking audio received time for latency`);
         this.hedgeEngine.markGeminiAudioReceived();
       }
+
+      // Forward to mediastream handler
       this.emit('audio', audioBuffer);
     });
 
@@ -319,6 +326,11 @@ export class VoiceService extends EventEmitter {
     }
 
     this.audioChunksSent++;
+    // 🔴 DIAGNOSTIC: Log audio chunks being sent to Gemini
+    const KB = (pcmBuffer.length / 1024).toFixed(2);
+    if (this.audioChunksSent <= 3 || this.audioChunksSent % 10 === 0) {
+      console.log(`🎤 Audio chunk #${this.audioChunksSent} sent to Gemini: ${pcmBuffer.length} bytes (${KB} KB), energy=${energyLevel.toFixed(0)}`);
+    }
     this.geminiSession.sendAudio(pcmBuffer);
   }
 
