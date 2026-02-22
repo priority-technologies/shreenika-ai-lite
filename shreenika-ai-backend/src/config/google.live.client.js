@@ -318,9 +318,10 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
-    // Using gemini-2.5-flash with AUDIO modality (native-audio-preview not available in all regions)
+    // CRITICAL: Use gemini-2.0-flash which SUPPORTS bidiGenerateContent (Live API)
+    // gemini-2.5-flash does NOT support bidiGenerateContent, causes code=1008 errors
     // Documentation: https://ai.google.dev/gemini-api/docs/live-guide
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash';
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
