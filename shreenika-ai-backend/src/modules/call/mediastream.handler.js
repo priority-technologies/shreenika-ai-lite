@@ -11,6 +11,7 @@ import { WebSocketServer } from 'ws';
 import { twilioToGemini, geminiToTwilio, createTwilioMediaMessage, upsample8kTo16k, downsample24kTo8k, encodeMulawBuffer } from './audio.converter.js';
 import { VoiceService } from './voice.service.js';
 import { createCallControl, analyzeAudioLevel } from './call.control.service.js';
+import AudioRouter from '../voice/audio.router.js';
 import Call from './call.model.js';
 import Agent from '../agent/agent.model.js';
 import { handleTestAgentUpgrade } from './test-agent.handler.js';
@@ -108,6 +109,7 @@ export const createMediaStreamServer = (httpServer) => {
     let streamSid = null;
     let voiceService = null;
     let callControl = null;
+    let audioRouter = null;
     let durationInterval = null;
     let isClosing = false;
 
@@ -198,33 +200,21 @@ export const createMediaStreamServer = (httpServer) => {
               voiceService = new VoiceService(call._id, call.agentId, false, voiceConfig);
               console.log(`🚀 Creating VoiceService for SansPBX call: ${message.callId}`);
 
-              // Set up audio event handler - CRITICAL FIX for SansPBX format
+              // Initialize AudioRouter for SansPBX audio delivery
+              audioRouter = new AudioRouter('sanspbx', {
+                ws,
+                sansPbxMetadata
+              });
+              console.log(`🎛️ AudioRouter initialized for SansPBX`);
+
+              // Set up audio event handler - uses AudioRouter for delivery
               voiceService.on('audio', (audioBuffer) => {
-                if (!sansPbxMetadata.isSansPBX || !voiceService) return;
+                if (!sansPbxMetadata.isSansPBX || !audioRouter) return;
 
-                try {
-                  // SansPBX expects: reverse-media event with PCM Linear 8000Hz 16-bit base64 audio
-                  // Convert: 24kHz PCM (Gemini) → 8kHz PCM Linear
-                  const pcm8k = downsample24kTo8k(audioBuffer);
-
-                  // Encode to base64 (NOT MULAW, NOT binary)
-                  const base64Audio = pcm8k.toString('base64');
-
-                  // Send as reverse-media JSON event
-                  const reverseMediaEvent = {
-                    event: 'reverse-media',
-                    payload: base64Audio,
-                    streamId: sansPbxMetadata.streamId,
-                    channelId: sansPbxMetadata.channelId,
-                    callId: sansPbxMetadata.callId
-                  };
-
-                  if (ws.readyState === ws.OPEN) {
-                    ws.send(JSON.stringify(reverseMediaEvent));
-                    console.log(`📤 SansPBX reverse-media: Sent ${base64Audio.length} chars of base64 PCM audio`);
-                  }
-                } catch (audioSendError) {
-                  console.error(`❌ Error sending SansPBX audio:`, audioSendError.message);
+                // 🔴 DIAGNOSTIC: Log audio routing
+                const success = audioRouter.routeAudio(audioBuffer);
+                if (!success) {
+                  console.warn(`⚠️ SansPBX audio routing failed for chunk`);
                 }
               });
 
@@ -253,10 +243,26 @@ export const createMediaStreamServer = (httpServer) => {
                 streamSid: message.streamId,
                 voiceService,
                 callControl,
+                audioRouter,
                 ws,
                 startTime: Date.now(),
                 provider: 'SansPBX'
               });
+
+              // Add logging when voice service closes
+              if (audioRouter) {
+                voiceService.on('close', () => {
+                  // Log audio routing metrics on close
+                  const metrics = audioRouter.getMetrics();
+                  console.log(`\n📊 AUDIO ROUTING SUMMARY FOR ${metrics.provider.toUpperCase()}:`);
+                  console.log(`   ├─ Total chunks sent: ${metrics.audioChunksSent}`);
+                  console.log(`   ├─ Failed chunks: ${metrics.audioChunksFailed}`);
+                  console.log(`   ├─ Success rate: ${metrics.successRate}`);
+                  console.log(`   ├─ Total data: ${metrics.totalKBSent} KB`);
+                  console.log(`   ├─ Duration: ${metrics.elapsedMs}ms`);
+                  console.log(`   └─ Avg chunk size: ${metrics.averageBytesPerChunk} bytes\n`);
+                });
+              }
 
             } catch (error) {
               console.error(`❌ SansPBX VOICE SERVICE INITIALIZATION FAILED:`, error.message);
@@ -342,21 +348,27 @@ export const createMediaStreamServer = (httpServer) => {
                 console.log(`🚀 Creating new VoiceService for call: ${callSid}`);
               }
 
+              // Initialize AudioRouter for Twilio audio delivery
+              audioRouter = new AudioRouter('twilio', {
+                ws,
+                streamSid: twilioCallSid // Use call SID as router identifier
+              });
+              console.log(`🎛️ AudioRouter initialized for Twilio: ${streamSid}`);
+
               // Set up event handlers for Twilio (SansPBX audio handled in 'answer' case above)
               voiceService.on('audio', (audioBuffer) => {
                 // CRITICAL FIX (2026-02-21): SansPBX audio handled in 'answer' event
                 // This handler is for Twilio Media Streams only
 
-                try {
-                  // Twilio Media Streams expects JSON with base64-encoded audio
-                  const base64Audio = geminiToTwilio(audioBuffer);
-                  const mediaMessage = createTwilioMediaMessage(streamSid, base64Audio);
-                  if (ws.readyState === ws.OPEN) {
-                    ws.send(JSON.stringify(mediaMessage));
-                    console.log(`📤 Twilio: Sent media frame with ${base64Audio.length} chars of base64 audio`);
-                  }
-                } catch (audioSendError) {
-                  console.error(`❌ Error sending Twilio audio back: ${audioSendError.message}`);
+                if (!audioRouter) {
+                  console.warn(`⚠️ AudioRouter not initialized for Twilio`);
+                  return;
+                }
+
+                // 🔴 DIAGNOSTIC: Log audio routing
+                const success = audioRouter.routeAudio(audioBuffer);
+                if (!success) {
+                  console.warn(`⚠️ Twilio audio routing failed for chunk`);
                 }
               });
 
@@ -410,11 +422,28 @@ export const createMediaStreamServer = (httpServer) => {
                 streamSid,
                 voiceService,
                 callControl,
+                audioRouter,
                 ws,
                 startTime: Date.now()
               });
 
               console.log(`✅ Voice service initialized for call: ${call._id}`);
+
+              // Add logging when voice service closes
+              const originalClose = voiceService.close ? voiceService.close.bind(voiceService) : null;
+              if (audioRouter && originalClose) {
+                voiceService.on('close', () => {
+                  // Log audio routing metrics on close
+                  const metrics = audioRouter.getMetrics();
+                  console.log(`\n📊 AUDIO ROUTING SUMMARY FOR ${metrics.provider.toUpperCase()}:`);
+                  console.log(`   ├─ Total chunks sent: ${metrics.audioChunksSent}`);
+                  console.log(`   ├─ Failed chunks: ${metrics.audioChunksFailed}`);
+                  console.log(`   ├─ Success rate: ${metrics.successRate}`);
+                  console.log(`   ├─ Total data: ${metrics.totalKBSent} KB`);
+                  console.log(`   ├─ Duration: ${metrics.elapsedMs}ms`);
+                  console.log(`   └─ Avg chunk size: ${metrics.averageBytesPerChunk} bytes\n`);
+                });
+              }
 
             } catch (error) {
               console.error(`\n❌ VOICE SERVICE INITIALIZATION FAILED`);
