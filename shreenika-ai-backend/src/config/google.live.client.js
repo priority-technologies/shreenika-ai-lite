@@ -495,15 +495,13 @@ export class GeminiLiveSession extends EventEmitter {
         model: `models/${this.model}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
+          // 🔴 CRITICAL FIX (2026-02-22): Remove double nesting - speechConfig.prebuiltVoiceConfig
+          // BROKEN: speechConfig.voiceConfig.prebuiltVoiceConfig (Gemini ignores nested voiceConfig)
+          // FIXED: speechConfig.prebuiltVoiceConfig (Gemini recognizes this structure)
+          // Gemini outputs 24kHz PCM natively - conversion to 8kHz MULAW in mediastream.handler.js
           speechConfig: {
-            // ✅ CRITICAL FIX (2026-02-20): Gemini Live API ONLY supports voiceConfig in speechConfig
-            // Invalid fields (audioEncoding, sampleRateHertz) cause code=1007 JSON validation errors
-            // Gemini outputs 24kHz PCM by default - audio conversion to 8kHz MULAW happens
-            // in mediastream.handler.js after receiving from Gemini
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: this.voice
-              }
+            prebuiltVoiceConfig: {
+              voiceName: this.voice
             }
           }
         }
