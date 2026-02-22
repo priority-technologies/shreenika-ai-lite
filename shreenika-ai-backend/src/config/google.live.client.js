@@ -522,18 +522,15 @@ export class GeminiLiveSession extends EventEmitter {
       }
     }
 
-    // Use validated cache ID OR fallback to system instruction
-    if (validCacheId) {
-      setupMessage.setup.cachedContent = validCacheId;
-      console.log(`📦 Using cached content: ${validCacheId}`);
-      console.log(`   💰 90% cost savings on system instruction + knowledge base`);
-    } else {
-      // No valid cache - include full system instruction
-      if (this.systemInstruction) {
-        setupMessage.setup.systemInstruction = {
-          parts: [{ text: this.systemInstruction }]
-        };
-        console.log(`📋 System instruction included (no cache or cache invalid)`);
+    // CRITICAL FIX: Gemini Live BidiGenerateContentSetup does NOT support cachedContent field
+    // Always include systemInstruction for Gemini Live (context caching not available in Live API)
+    if (this.systemInstruction) {
+      setupMessage.setup.systemInstruction = {
+        parts: [{ text: this.systemInstruction }]
+      };
+      console.log(`📋 System instruction included in setup`);
+      if (validCacheId) {
+        console.log(`   ℹ️ Note: Cache ID available but not supported in Live API setup`);
       }
     }
 
