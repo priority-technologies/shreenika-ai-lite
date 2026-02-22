@@ -212,24 +212,43 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     parts.push(agent.prompt);
   }
 
-  // ===== KNOWLEDGE BASE =====
+  // ===== FIX 2: KNOWLEDGE BASE HARD LIMIT (2026-02-22) =====
   // Knowledge docs injected directly into system instruction as fallback
-  // Context Caching requires compatible models (not audio-preview)
-  // When caching works, knowledge is handled via cache. Otherwise, direct injection.
+  // HARD LIMIT: 20,000 characters (prevents API rejection + memory issues)
   if (knowledgeDocs && knowledgeDocs.length > 0) {
     parts.push('\n\n=== YOUR KNOWLEDGE BASE ===');
     parts.push('Use this information to answer questions accurately:');
+
+    const MAX_KNOWLEDGE_CHARS = 20000; // Hard limit - truncate beyond this
     let totalKnowledgeChars = 0;
-    const MAX_KNOWLEDGE_CHARS = 25000; // Keep under Gemini's sweet spot
+    let docsIncluded = 0;
+
     for (const doc of knowledgeDocs) {
       const text = doc.rawText || doc.content || '';
-      if (text && totalKnowledgeChars + text.length < MAX_KNOWLEDGE_CHARS) {
-        parts.push(`\n[${doc.title || 'Document'}]`);
-        parts.push(text);
-        totalKnowledgeChars += text.length;
+      if (text) {
+        // Check if adding this doc would exceed limit
+        if (totalKnowledgeChars + text.length <= MAX_KNOWLEDGE_CHARS) {
+          parts.push(`\n[${doc.title || 'Document'}]`);
+          parts.push(text);
+          totalKnowledgeChars += text.length;
+          docsIncluded++;
+        } else {
+          // Would exceed limit - truncate remaining space
+          const remainingSpace = MAX_KNOWLEDGE_CHARS - totalKnowledgeChars;
+          if (remainingSpace > 100) {
+            const truncatedText = text.substring(0, remainingSpace);
+            parts.push(`\n[${doc.title || 'Document'} - TRUNCATED]`);
+            parts.push(truncatedText);
+            parts.push('\n[... remaining knowledge truncated due to size limit ...]');
+            totalKnowledgeChars = MAX_KNOWLEDGE_CHARS;
+          }
+          break; // Stop processing more docs
+        }
       }
     }
+
     parts.push('\n=== END KNOWLEDGE BASE ===');
+    console.log(`✅ Knowledge base included: ${docsIncluded} docs, ${totalKnowledgeChars} chars (limit: ${MAX_KNOWLEDGE_CHARS})`);
   }
 
   // ===== CALL START BEHAVIOR =====
@@ -314,6 +333,48 @@ export class GeminiLiveSession extends EventEmitter {
     // for phone systems happens in audio.converter.js (geminiToTwilio function)
     this.inputSampleRate = 16000; // 16kHz PCM input (Gemini preference)
     this.outputSampleRate = 24000; // 24kHz PCM output (Gemini native, converted downstream)
+
+    // ===== FIX 3: WEBSOCKET AUTO-RECONNECT (2026-02-22) =====
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 3;
+    this.reconnectDelay = 1000; // Start with 1 second
+    this.isIntentionalDisconnect = false;
+  }
+
+  /**
+   * Handle WebSocket reconnection with exponential backoff (FIX 3)
+   * @private
+   */
+  async _handleReconnect(error) {
+    if (this.isIntentionalDisconnect) {
+      console.log('🛑 Intentional disconnect - no auto-reconnect');
+      return;
+    }
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error(`❌ MAX RECONNECT ATTEMPTS REACHED (${this.maxReconnectAttempts}) - Giving up`);
+      this.emit('fatal_error', new Error(`WebSocket reconnection failed after ${this.maxReconnectAttempts} attempts`));
+      return;
+    }
+
+    this.reconnectAttempts++;
+
+    // Exponential backoff: 1s, 2s, 4s
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+    console.warn(`⚠️ RECONNECTING in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+    console.warn(`   Reason: ${error.message}`);
+
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    console.log('🔄 Attempting reconnect...');
+    try {
+      await this.connect();
+      console.log('✅ Reconnect successful!');
+    } catch (reconnectError) {
+      console.error('❌ Reconnect failed:', reconnectError.message);
+      await this._handleReconnect(reconnectError);
+    }
   }
 
   /**
@@ -331,6 +392,7 @@ export class GeminiLiveSession extends EventEmitter {
       console.log(`   ├─ Model: ${this.model}`);
       console.log(`   ├─ Voice: ${this.voice}`);
       console.log(`   ├─ API Key present: ${!!this.apiKey}`);
+      console.log(`   ├─ Reconnect attempt: ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
       console.log(`   └─ Timestamp: ${new Date().toISOString()}\n`);
 
       this.ws = new WebSocket(url);
@@ -360,8 +422,9 @@ export class GeminiLiveSession extends EventEmitter {
         const elapsed = Date.now() - connectionStartTime;
         console.error(`❌ WebSocket ERROR (${elapsed}ms):`, error.message);
         console.error(`   Code: ${error.code}`);
-        console.error(`   Details: ${JSON.stringify(error)}`);
         this.emit('error', error);
+        // Attempt reconnect (FIX 3)
+        this._handleReconnect(error);
         if (!resolved) {
           resolved = true;
           reject(error);
@@ -374,6 +437,13 @@ export class GeminiLiveSession extends EventEmitter {
         console.error(`❌ WebSocket CLOSED (${elapsed}ms): code=${code} reason=${reasonStr}`);
         this.isConnected = false;
         this.emit('close', { code, reason: reasonStr });
+
+        // Attempt reconnect if not intentional (FIX 3)
+        if (!this.isIntentionalDisconnect && !resolved) {
+          console.warn('⚠️ Unexpected disconnect - attempting auto-reconnect');
+          this._handleReconnect(new Error(`WebSocket closed: code=${code} reason=${reasonStr}`));
+        }
+
         if (!resolved) {
           resolved = true;
           reject(new Error(`Gemini Live connection closed before ready: code=${code} reason=${reasonStr}`));
@@ -385,6 +455,9 @@ export class GeminiLiveSession extends EventEmitter {
         const elapsed = Date.now() - connectionStartTime;
         if (!resolved) {
           resolved = true;
+          // Reset reconnect counter on successful connection (FIX 3)
+          this.reconnectAttempts = 0;
+          this.reconnectDelay = 1000;
           console.log(`✅ GEMINI LIVE: Session ready in ${elapsed}ms`);
           resolve();
         }
@@ -437,20 +510,34 @@ export class GeminiLiveSession extends EventEmitter {
       }
     };
 
-    // ✅ CRITICAL OPTIMIZATION: Only send systemInstruction if NO cache available
-    // When cacheId is present, instruction is already in cached content → savings!
-    if (this.systemInstruction && !this.cacheId) {
-      setupMessage.setup.systemInstruction = {
-        parts: [{ text: this.systemInstruction }]
-      };
-      console.log(`📋 System instruction included (no cache)`);
+    // ===== FIX 1: CACHE ID VALIDATION WITH FALLBACK (2026-02-22) =====
+    // Validate cache ID format before using to prevent silent failures
+    let validCacheId = null;
+    if (this.cacheId) {
+      // Cache ID must match format: cachedContents/[alphanumeric-_]+
+      const cacheIdRegex = /^cachedContents\/[a-zA-Z0-9_-]+$/;
+      if (typeof this.cacheId === 'string' && cacheIdRegex.test(this.cacheId)) {
+        validCacheId = this.cacheId;
+        console.log('✅ Valid cache ID:', validCacheId);
+      } else {
+        console.warn('⚠️ MALFORMED CACHE ID DETECTED - Falling back to no-cache mode:', this.cacheId);
+        validCacheId = null; // Force fallback
+      }
     }
 
-    // Add cached content if available (Context Caching)
-    if (this.cacheId) {
-      setupMessage.setup.cachedContent = this.cacheId;
-      console.log(`📦 Using cached content: ${this.cacheId}`);
+    // Use validated cache ID OR fallback to system instruction
+    if (validCacheId) {
+      setupMessage.setup.cachedContent = validCacheId;
+      console.log(`📦 Using cached content: ${validCacheId}`);
       console.log(`   💰 90% cost savings on system instruction + knowledge base`);
+    } else {
+      // No valid cache - include full system instruction
+      if (this.systemInstruction) {
+        setupMessage.setup.systemInstruction = {
+          parts: [{ text: this.systemInstruction }]
+        };
+        console.log(`📋 System instruction included (no cache or cache invalid)`);
+      }
     }
 
     // 🔴 DIAGNOSTIC: Log the exact setup message being sent to Gemini
@@ -459,8 +546,8 @@ export class GeminiLiveSession extends EventEmitter {
     console.log(`   ├─ Response Modalities: ${JSON.stringify(setupMessage.setup.generationConfig.responseModalities)}`);
     console.log(`   ├─ Voice Name: ${this.voice}`);
     console.log(`   ├─ Audio Output: ENABLED ✅`);
-    console.log(`   ├─ System Instruction: ${this.systemInstruction ? `${this.systemInstruction.length} chars` : 'OMITTED (using cache)'}`);
-    console.log(`   └─ Cache ID: ${this.cacheId || 'NONE'}\n`);
+    console.log(`   ├─ System Instruction: ${setupMessage.setup.systemInstruction ? `${setupMessage.setup.systemInstruction.parts[0].text.length} chars` : 'OMITTED (using cache)'}`);
+    console.log(`   └─ Cache ID: ${validCacheId || 'NONE'}\n`);
 
     this._send(setupMessage);
   }
@@ -691,13 +778,16 @@ export class GeminiLiveSession extends EventEmitter {
 
   /**
    * Close the session
+   * Gracefully disconnect without triggering auto-reconnect (FIX 3)
    */
   close() {
+    this.isIntentionalDisconnect = true; // Prevent auto-reconnect
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.isConnected = false;
+    console.log('✅ Gemini Live session closed intentionally');
   }
 }
 
