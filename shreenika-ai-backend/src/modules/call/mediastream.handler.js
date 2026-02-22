@@ -37,9 +37,17 @@ function downsample44100to16k(audioBuffer) {
   const outputBuffer = Buffer.alloc(outputSamples * 2);
 
   for (let i = 0; i < outputSamples; i++) {
-    const inputIndex = Math.floor(i * 44100 / 16000);
-    const sample = audioBuffer.readInt16LE(inputIndex * 2);
-    outputBuffer.writeInt16LE(sample, i * 2);
+    // Linear interpolation for better quality (not nearest-neighbor)
+    const inputIndexExact = i * 44100 / 16000;
+    const inputIndex = Math.floor(inputIndexExact);
+    const fraction = inputIndexExact - inputIndex;
+
+    const sample1 = audioBuffer.readInt16LE(Math.min(inputIndex, inputSamples - 1) * 2);
+    const sample2 = inputIndex + 1 < inputSamples ? audioBuffer.readInt16LE((inputIndex + 1) * 2) : sample1;
+
+    // Linear interpolation: blend between sample1 and sample2
+    const interpolatedSample = Math.round(sample1 * (1 - fraction) + sample2 * fraction);
+    outputBuffer.writeInt16LE(interpolatedSample, i * 2);
   }
 
   return outputBuffer;
