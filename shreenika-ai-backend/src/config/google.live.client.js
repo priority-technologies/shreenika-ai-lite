@@ -317,9 +317,10 @@ export class GeminiLiveSession extends EventEmitter {
     super();
 
     this.apiKey = apiKey;
-    // Gemini Live API native audio model: env var > options > latest stable model
+    // Gemini Live API model: env var > options > fallback
+    // Using gemini-2.5-flash with AUDIO modality (native-audio-preview not available in all regions)
     // Documentation: https://ai.google.dev/gemini-api/docs/live-guide
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025';
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
@@ -495,13 +496,11 @@ export class GeminiLiveSession extends EventEmitter {
         model: `models/${this.model}`,
         generationConfig: {
           responseModalities: ['AUDIO'],
-          // 🔴 CRITICAL FIX (2026-02-22): Remove double nesting - speechConfig.prebuiltVoiceConfig
-          // BROKEN: speechConfig.voiceConfig.prebuiltVoiceConfig (Gemini ignores nested voiceConfig)
-          // FIXED: speechConfig.prebuiltVoiceConfig (Gemini recognizes this structure)
-          // Gemini outputs 24kHz PCM natively - conversion to 8kHz MULAW in mediastream.handler.js
           speechConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: this.voice
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: this.voice  // Aoede, Charon, Kore, Fenrir, Leda, Orus, Zephyr
+              }
             }
           }
         }
