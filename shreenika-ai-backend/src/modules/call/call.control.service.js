@@ -24,14 +24,33 @@ export class CallControlService {
     this.voicemailAction = callSettings.voicemailAction || 'hang-up'; // 'hang-up', 'leave-message', 'transfer'
     this.voicemailMessage = callSettings.voicemailMessage || '';
 
+    // 🔴 STEP 4: Enhanced tracking
+    this.durationWarningsSent = [];
+    this.silenceWarningsSent = [];
+    this.controlMetrics = {
+      durationEnforcements: 0,
+      silenceDetections: 0,
+      voicemailDetections: 0,
+      userWarnings: 0
+    };
+
+    // 🔴 STEP 4: Warning thresholds
+    this.warningThresholds = {
+      critical: Math.max(60, this.maxCallDuration * 0.05), // 5% or 60s
+      warning: Math.max(300, this.maxCallDuration * 0.15), // 15% or 5 min
+      info: Math.max(600, this.maxCallDuration * 0.25)     // 25% or 10 min
+    };
+
     console.log(`📞 CallControl: Initialized for call ${callId}`);
-    console.log(`   Max Duration: ${this.maxCallDuration}s`);
-    console.log(`   Silence Detection: ${this.silenceDetectionMs}ms`);
-    console.log(`   Voicemail Detection: ${this.voicemailDetection}`);
+    console.log(`   ├─ Max Duration: ${this.maxCallDuration}s`);
+    console.log(`   ├─ Silence Detection: ${this.silenceDetectionMs}ms`);
+    console.log(`   ├─ Voicemail Detection: ${this.voicemailDetection}`);
+    console.log(`   └─ Warning Thresholds: ${JSON.stringify(this.warningThresholds)}`);
   }
 
   /**
    * Check if call duration exceeded
+   * 🔴 STEP 4: Explicit enforcement with detailed logging
    */
   isDurationExceeded() {
     const elapsedMs = Date.now() - this.startTime;
@@ -39,7 +58,14 @@ export class CallControlService {
     const exceeded = elapsedSeconds > this.maxCallDuration;
 
     if (exceeded && this.isActive) {
-      console.log(`⏱️  CallControl: Max duration (${this.maxCallDuration}s) exceeded. Elapsed: ${elapsedSeconds}s`);
+      this.controlMetrics.durationEnforcements++;
+      const overage = elapsedSeconds - this.maxCallDuration;
+      console.error(`\n❌ CALL DURATION EXCEEDED - ENFORCING TERMINATION`);
+      console.error(`   ├─ Max allowed: ${this.maxCallDuration}s`);
+      console.error(`   ├─ Actual elapsed: ${elapsedSeconds}s`);
+      console.error(`   ├─ Overage: ${overage}s`);
+      console.error(`   ├─ Enforcement #${this.controlMetrics.durationEnforcements}`);
+      console.error(`   └─ Action: CALL WILL BE TERMINATED\n`);
     }
 
     return exceeded;
@@ -58,6 +84,7 @@ export class CallControlService {
   /**
    * Monitor silence - call this on each audio chunk
    * audioLevel: 0-100 (0=silent, 100=loud)
+   * 🔴 STEP 4: Explicit silence enforcement with detailed logging
    */
   updateSilenceDetection(audioLevel) {
     const SILENCE_THRESHOLD = 10; // Audio level below 10 = silence
@@ -66,13 +93,23 @@ export class CallControlService {
       // Audio is silent
       if (this.silenceStartTime === null) {
         this.silenceStartTime = Date.now();
+        console.log(`🔇 Silence started (threshold: ${this.silenceDetectionMs}ms)`);
       }
 
       this.silenceDuration = Date.now() - this.silenceStartTime;
 
       // Check if silence exceeded threshold
-      if (this.silenceDuration > this.silenceDetectionMs) {
-        console.log(`🔇 CallControl: Silence detected for ${this.silenceDuration}ms (threshold: ${this.silenceDetectionMs}ms)`);
+      if (this.silenceDuration > this.silenceDetectionMs && this.isActive) {
+        this.controlMetrics.silenceDetections++;
+        const overageMs = this.silenceDuration - this.silenceDetectionMs;
+
+        console.error(`\n❌ SILENCE THRESHOLD EXCEEDED - ENFORCING TERMINATION`);
+        console.error(`   ├─ Max silent duration: ${this.silenceDetectionMs}ms`);
+        console.error(`   ├─ Actual silence: ${this.silenceDuration}ms`);
+        console.error(`   ├─ Overage: ${overageMs}ms`);
+        console.error(`   ├─ Enforcement #${this.controlMetrics.silenceDetections}`);
+        console.error(`   └─ Action: CALL WILL BE TERMINATED\n`);
+
         return {
           silenceDetected: true,
           silenceDuration: this.silenceDuration,
@@ -82,7 +119,9 @@ export class CallControlService {
     } else {
       // Audio is not silent - reset
       if (this.silenceStartTime !== null) {
-        console.log(`🔊 CallControl: Audio detected after ${this.silenceDuration}ms silence. Silence reset.`);
+        const silenceWas = Math.floor(this.silenceDuration / 1000);
+        const threshold = Math.floor(this.silenceDetectionMs / 1000);
+        console.log(`🔊 Audio detected after ${silenceWas}s silence (threshold: ${threshold}s). Silence reset.`);
       }
       this.silenceStartTime = null;
       this.silenceDuration = 0;
@@ -208,6 +247,7 @@ export class CallControlService {
 
   /**
    * Send remaining time update to user (via WebSocket)
+   * 🔴 STEP 4: Enhanced warning tracking
    */
   broadcastCallStatus() {
     const status = this.getCallStatus();
@@ -215,28 +255,56 @@ export class CallControlService {
     // Emit to frontend via Socket.IO
     io.to(this.callId).emit('call:status-update', status);
 
-    // Log warnings
-    if (status.warning === 'critical') {
-      console.log(`⚠️  CRITICAL: Call ending in ${status.remainingSeconds} seconds`);
-    } else if (status.warning === 'warning') {
-      console.log(`⚠️  WARNING: ${status.remainingSeconds} seconds remaining`);
+    // Log warnings (track to avoid spam)
+    if (status.warning === 'critical' && !this.durationWarningsSent.includes('critical')) {
+      this.durationWarningsSent.push('critical');
+      this.controlMetrics.userWarnings++;
+      console.warn(`\n⚠️  CRITICAL WARNING SENT TO USER`);
+      console.warn(`   ├─ Call ending in ${status.remainingSeconds} seconds`);
+      console.warn(`   ├─ Percent used: ${status.percentUsed}%`);
+      console.warn(`   └─ Action: User should wrap up conversation\n`);
+    } else if (status.warning === 'warning' && !this.durationWarningsSent.includes('warning')) {
+      this.durationWarningsSent.push('warning');
+      this.controlMetrics.userWarnings++;
+      console.warn(`⚠️  WARNING: ${status.remainingSeconds} seconds remaining (${status.percentUsed}% used)`);
     }
 
     return status;
   }
 
   /**
+   * Get control enforcement metrics
+   * 🔴 STEP 4: Metrics for call control effectiveness
+   */
+  getControlMetrics() {
+    const elapsedSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+    return {
+      callId: this.callId,
+      durationEnforcements: this.controlMetrics.durationEnforcements,
+      silenceDetections: this.controlMetrics.silenceDetections,
+      voicemailDetections: this.controlMetrics.voicemailDetections,
+      userWarnings: this.controlMetrics.userWarnings,
+      silenceDuration: this.silenceDuration,
+      totalElapsed: elapsedSeconds,
+      maxDuration: this.maxCallDuration,
+      enforced: this.controlMetrics.durationEnforcements > 0 || this.controlMetrics.silenceDetections > 0
+    };
+  }
+
+  /**
    * End call and save to database
+   * 🔴 STEP 4: Log control metrics on call end
    */
   async endCall(callId, reason = 'completed') {
     if (!this.isActive) return;
 
     this.isActive = false;
     const elapsedSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+    const metrics = this.getControlMetrics();
 
     console.log(`🛑 CallControl: Ending call ${callId}`);
     console.log(`   Reason: ${reason}`);
-    console.log(`   Duration: ${elapsedSeconds}s`);
+    console.log(`   Duration: ${elapsedSeconds}s / ${this.maxCallDuration}s`);
 
     try {
       // Update call in database
@@ -246,7 +314,8 @@ export class CallControlService {
           status: 'COMPLETED',
           endReason: reason,
           durationSeconds: elapsedSeconds,
-          completedAt: new Date()
+          completedAt: new Date(),
+          callControlMetrics: metrics // Save metrics to DB
         },
         { new: true }
       );
@@ -255,11 +324,22 @@ export class CallControlService {
       io.to(callId).emit('call:ended', {
         callId,
         reason,
-        duration: elapsedSeconds
+        duration: elapsedSeconds,
+        metrics
       });
 
+      // 🔴 STEP 4: Log detailed enforcement summary
+      console.log(`\n📊 CALL CONTROL ENFORCEMENT SUMMARY:`);
+      console.log(`   ├─ Duration Enforcements: ${metrics.durationEnforcements}`);
+      console.log(`   ├─ Silence Detections: ${metrics.silenceDetections}`);
+      console.log(`   ├─ Voicemail Detections: ${metrics.voicemailDetections}`);
+      console.log(`   ├─ User Warnings Sent: ${metrics.userWarnings}`);
+      console.log(`   ├─ Total Silence: ${Math.floor(metrics.silenceDuration / 1000)}s`);
+      console.log(`   ├─ Control Enforced: ${metrics.enforced ? 'YES' : 'NO'}`);
+      console.log(`   └─ Reason: ${reason}\n`);
+
       console.log(`✅ CallControl: Call ended successfully`);
-      return { success: true, duration: elapsedSeconds, reason };
+      return { success: true, duration: elapsedSeconds, reason, metrics };
     } catch (error) {
       console.error(`❌ CallControl: Error ending call:`, error.message);
       throw error;
