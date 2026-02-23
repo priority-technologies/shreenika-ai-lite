@@ -24,6 +24,7 @@ import voipRoutes from "./modules/voip/voip.routes.js";
 import apiKeyRoutes from "./modules/apikey/apikey.routes.js";
 import apiV1Routes from "./modules/apikey/api-v1.routes.js";
 import webhookRoutes from "./modules/webhook/webhook.routes.js";
+import voiceRoutes from "./modules/voice/voice.routes.js";
 import { createMediaStreamServer, registerUnifiedUpgradeHandler } from "./modules/call/mediastream.handler.js";
 import { WebSocketServer } from "ws";
 
@@ -142,10 +143,11 @@ app.use("/knowledge", knowledgeRoutes);
 app.use("/ai", aiRoutes);
 app.use("/voip", voipRoutes);
 app.use("/webhooks", webhookRoutes);
+app.use("/voice", voiceRoutes);
 // Agent routes available at both paths for compatibility
 app.use("/api/agents", agentRoutes);
 app.use("/api/voice/agents", agentRoutes); // Voice agents endpoint
-app.use("/api/test-agent", testAgentRoutes);
+app.use("/api/voice/test-agent", testAgentRoutes); // Match frontend path
 app.use("/settings/api-keys", apiKeyRoutes);
 app.use("/api/v1", apiV1Routes);
 
