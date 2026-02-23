@@ -236,10 +236,10 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
-    // CRITICAL: Use gemini-live-2.5-flash-native-audio (Manager's strategic direction)
-    // This is the actual available model for bidiGenerateContent in v1beta API
-    // Verified against actual Google API availability, not assumed from documentation
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-live-2.5-flash-native-audio';
+    // MANAGER DIRECTIVE (2026-02-24): Use -latest GA production model
+    // Generative Language API requires: models/gemini-2.5-flash-native-audio-latest (NOT gemini-live-)
+    // The -latest suffix is the correct resource name for Google AI Studio/Generative Language API
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-latest';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
@@ -305,9 +305,10 @@ export class GeminiLiveSession extends EventEmitter {
   async connect() {
     return new Promise((resolve, reject) => {
       let resolved = false;
-      // CRITICAL FIX: Use correct WebSocket URL format with model in path
-      // Format: wss://generativelanguage.googleapis.com/v1beta/models/{MODEL}:BidiGenerateContent?key={API_KEY}&alt=ws
-      const url = `wss://generativelanguage.googleapis.com/v1beta/models/${this.model}:BidiGenerateContent?key=${this.apiKey}&alt=ws`;
+      // MANAGER DIRECTIVE (2026-02-24): Use /ws/ path for Multimodal Live API (NOT /v1beta/models/)
+      // REST API and Live WebSocket API use different URL structures
+      // Live API requires persistent stateful connection via /ws/ path
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService/BidiGenerateContent?key=${this.apiKey}`;
       const connectionStartTime = Date.now();
 
       console.log(`\n🔌 GEMINI LIVE CONNECTION STARTING`);
@@ -415,12 +416,12 @@ export class GeminiLiveSession extends EventEmitter {
     const setupMessage = {
       setup: {
         model: `models/${this.model}`,
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: this.voice  // Aoede, Charon, Kore, Fenrir, Leda, Orus, Zephyr
+        generation_config: {
+          response_modalities: ['AUDIO'],
+          speech_config: {
+            voice_config: {
+              prebuilt_voice_config: {
+                voice_name: this.voice  // Aoede, Charon, Kore, Fenrir, Leda, Orus, Zephyr
               }
             }
           }
@@ -443,10 +444,10 @@ export class GeminiLiveSession extends EventEmitter {
       }
     }
 
-    // CRITICAL FIX: Gemini Live BidiGenerateContentSetup does NOT support cachedContent field
-    // Always include systemInstruction for Gemini Live (context caching not available in Live API)
+    // MANAGER DIRECTIVE: v1beta Multimodal Live API uses snake_case strictly
+    // Always include system_instruction for Gemini Live (context caching not available in Live API)
     if (this.systemInstruction) {
-      setupMessage.setup.systemInstruction = {
+      setupMessage.setup.system_instruction = {
         parts: [{ text: this.systemInstruction }]
       };
       console.log(`📋 System instruction included in setup`);
@@ -455,13 +456,13 @@ export class GeminiLiveSession extends EventEmitter {
       }
     }
 
-    // 🔴 DIAGNOSTIC: Log the exact setup message being sent to Gemini
+    // 🔴 DIAGNOSTIC: Log the exact setup message being sent to Gemini (snake_case format)
     console.log(`\n🔧 GEMINI LIVE SETUP MESSAGE:`);
     console.log(`   ├─ Model: ${setupMessage.setup.model}`);
-    console.log(`   ├─ Response Modalities: ${JSON.stringify(setupMessage.setup.generationConfig.responseModalities)}`);
+    console.log(`   ├─ Response Modalities: ${JSON.stringify(setupMessage.setup.generation_config.response_modalities)}`);
     console.log(`   ├─ Voice Name: ${this.voice}`);
     console.log(`   ├─ Audio Output: ENABLED ✅`);
-    console.log(`   ├─ System Instruction: ${setupMessage.setup.systemInstruction ? `${setupMessage.setup.systemInstruction.parts[0].text.length} chars` : 'OMITTED (using cache)'}`);
+    console.log(`   ├─ System Instruction: ${setupMessage.setup.system_instruction ? `${setupMessage.setup.system_instruction.parts[0].text.length} chars` : 'OMITTED'}`);
     console.log(`   └─ Cache ID: ${validCacheId || 'NONE'}\n`);
 
     this._send(setupMessage);
