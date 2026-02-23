@@ -310,9 +310,10 @@ export class GeminiLiveSession extends EventEmitter {
     return new Promise((resolve, reject) => {
       let resolved = false;
       // MANAGER DIRECTIVE (2026-02-24 UPDATED): Use "Direct Model Path" format for AI Studio key
-      // Format: wss://generativelanguage.googleapis.com/v1beta/models/{MODEL}:bidiGenerateContent?key={API_KEY}
-      // Note: lowercase 'bidi' not 'Bidi'. Model name MUST be in path. This is the only format whitelisted for AI Studio keys.
-      const url = `wss://generativelanguage.googleapis.com/v1beta/models/${this.model}:bidiGenerateContent?key=${this.apiKey}`;
+      // CRITICAL FIX: Use official Google endpoint from https://ai.google.dev/api/live
+      // Format: wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={API_KEY}
+      // Model is selected in setup message, NOT in URL path
+      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${this.apiKey}`;
       const connectionStartTime = Date.now();
 
       console.log(`\n🔌 GEMINI LIVE CONNECTION STARTING`);
