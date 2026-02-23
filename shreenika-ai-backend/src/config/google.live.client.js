@@ -249,6 +249,7 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.ws = null;
     this.isConnected = false;
+    this.isReady = false; // ⚠️ CRITICAL: Only set to true AFTER setupComplete is received
     this.sessionId = null;
 
     // Audio configuration
@@ -340,7 +341,12 @@ export class GeminiLiveSession extends EventEmitter {
         const elapsed = Date.now() - connectionStartTime;
         console.log(`✅ WebSocket OPEN (${elapsed}ms)`);
         this.isConnected = true;
-        this._sendSetup();
+        // ⚠️ CRITICAL FIX (Manager's Race Condition): Wait 100ms before sending setup
+        // This allows TCP buffers and Google's load balancer to stabilize the stateful stream
+        // Sending setup too early causes "Frame Error" or 400 rejection
+        setTimeout(() => {
+          this._sendSetup();
+        }, 100);
         // Do NOT resolve yet - wait for setupComplete
       });
 
@@ -509,6 +515,9 @@ export class GeminiLiveSession extends EventEmitter {
         console.log(`   ├─ Audio output: Ready to receive`);
         console.log(`   └─ Timestamp: ${new Date().toISOString()}`);
         this.sessionId = message.setupComplete.sessionId;
+        // ⚠️ CRITICAL FIX (Manager's Race Condition): Only NOW allow audio to be sent
+        // This prevents sending audio before Gemini has finished initializing the session
+        this.isReady = true;
         this.emit('ready', { sessionId: this.sessionId });
         return;
       }
@@ -605,11 +614,15 @@ export class GeminiLiveSession extends EventEmitter {
    * @param {Buffer} pcmBuffer - PCM 16-bit 16kHz audio buffer
    */
   sendAudio(pcmBuffer) {
-    if (!this.isConnected) {
+    // ⚠️ CRITICAL FIX (Manager's Race Condition): Check isReady, NOT isConnected
+    // isConnected = WebSocket TCP connection open
+    // isReady = Gemini has finished setup handshake and is ready for audio
+    // Audio sent between these two states kills the connection (Error 1006)
+    if (!this.isReady) {
       if (this._audioDropCount === undefined) this._audioDropCount = 0;
       this._audioDropCount++;
       if (this._audioDropCount <= 3 || this._audioDropCount % 50 === 0) {
-        console.warn(`⚠️ Gemini Live: Cannot send audio - not connected (dropped ${this._audioDropCount} chunks)`);
+        console.warn(`⚠️ Gemini Live: Cannot send audio - setup not complete yet (dropped ${this._audioDropCount} chunks)`);
       }
       return;
     }
