@@ -236,10 +236,10 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
-    // CRITICAL: Use gemini-2.0-flash-exp (CONFIRMED working model for bidiGenerateContent)
-    // Only model with confirmed support for streaming audio via bidiGenerateContent
-    // Source: Google AI Developers Forum - model compatibility research
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp';
+    // CRITICAL: Use gemini-live-2.5-flash-native-audio (Manager's strategic direction)
+    // This is the actual available model for bidiGenerateContent in v1beta API
+    // Verified against actual Google API availability, not assumed from documentation
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-live-2.5-flash-native-audio';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
