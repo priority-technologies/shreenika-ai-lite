@@ -240,7 +240,7 @@ export class GeminiLiveSession extends EventEmitter {
     // Reason: 400 error indicates setup frame is malformed or model is not whitelisted for Bidi
     // gemini-2.0-flash-exp is confirmed stable for bidiGenerateContent WebSocket handshakes
     // Testing without -latest/-preview suffixes to clear 400 error
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp';
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-live';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
