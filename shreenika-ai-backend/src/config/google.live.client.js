@@ -154,101 +154,19 @@ export const buildSystemInstruction = (agent, knowledgeDocs = [], voiceConfig = 
     }
   }
 
-  // ===== ACOUSTIC STEERING (Gemini Native Audio Directives) =====
-  // Per Gemini 2.5 native audio, use natural language for acoustic control
-  parts.push('\nACOUSTIC STEERING FOR VOICE DELIVERY:');
+  // GEMINI LIVE OPTIMIZATION (2026-02-23)
+  // REMOVED: Acoustic steering (~800 chars) - Gemini 2.0-flash handles tone natively
+  // REMOVED: Knowledge base (~10-20K chars) - Causes 5-6s latency spikes
+  // Voice customization (40-60 ratio) above is sufficient for tone + personality control
 
-  if (language === 'hinglish') {
-    parts.push('- Use Hinglish rhythm (warm, conversational blend of Hindi and English)');
-    parts.push('- Speak with upward inflection (rising intonation) at sentence ends to convey warmth');
-    parts.push('- First syllable stress on multi-syllabic words (e.g., COMputer, IMportant)');
-    parts.push('- Use natural Hinglish fillers: "Acha", "Haan", "Matlab" for conversational flow');
-    parts.push('- Mix Hindi and English naturally in speech, never robotic or forced');
-    parts.push('- Sound genuinely engaged, never transactional or formal');
-  } else if (language === 'hi-IN') {
-    parts.push('- Use authentic Hindi intonation and rhythm');
-    parts.push('- Sound warm, engaged, and emotionally expressive');
-    parts.push('- Use natural Hindi expressions and colloquialisms');
-    parts.push('- Maintain high prosody variation (expressive, not monotone)');
-  } else if (language === 'en-IN') {
-    parts.push('- Use Indian English rhythm and phrasing');
-    parts.push('- Sound warm, personable, and authentically Indian');
-    parts.push('- Natural intonation patterns of Indian English speakers');
-    parts.push('- Use common Indian expressions naturally in conversation');
-  } else {
-    // Default: American English
-    parts.push('- Use American English rhythm and intonation');
-    parts.push('- Sound professional, confident, and naturally engaging');
-    parts.push('- Conversational tone, never robotic');
-  }
-
-  // Add emotion-based acoustic guidance (emotionLevel already defined above)
-  if (emotionLevel > 0.7) {
-    parts.push('- Deliver with enthusiasm, energy, and warmth (higher pitch, faster pace)');
-  } else if (emotionLevel < 0.3) {
-    parts.push('- Deliver with calm, measured tone (lower pitch, slower pace, thoughtful pauses)');
-  }
-
-  // Background noise acoustic instructions
-  const backgroundNoise = voiceConfig?.speechSettings60?.backgroundNoise ||
-    agent.speechSettings?.backgroundNoise || 'office';
-
-  const NOISE_INSTRUCTIONS = {
-    'office':      'You are in a professional office environment. Speak in a measured, professional tone appropriate for a business setting.',
-    'quiet':       'You are in a quiet environment. Speak softly and clearly. Use minimal vocal filler. Allow comfortable silences.',
-    'cafe':        'You are in a cafe setting with ambient background noise. Speak with slightly elevated energy and clarity to cut through noise.',
-    'street':      'You are on the street with traffic and outdoor noise. Speak clearly and deliberately. Be patient with interruptions.',
-    'call-center': 'You are in a call center environment. Use a confident, service-oriented tone. Be clear and efficient.'
-  };
-
-  const noiseInstruction = NOISE_INSTRUCTIONS[backgroundNoise];
-  if (noiseInstruction) {
-    parts.push(`\nEnvironment: ${noiseInstruction}`);
-  }
-
-  // Custom prompt
+  // Custom prompt - TRUNCATE to 1500 chars max for real-time performance
   if (agent.prompt) {
-    parts.push('\nYour instructions:');
-    parts.push(agent.prompt);
-  }
-
-  // ===== FIX 2: KNOWLEDGE BASE HARD LIMIT (2026-02-22) =====
-  // Knowledge docs injected directly into system instruction as fallback
-  // HARD LIMIT: 20,000 characters (prevents API rejection + memory issues)
-  if (knowledgeDocs && knowledgeDocs.length > 0) {
-    parts.push('\n\n=== YOUR KNOWLEDGE BASE ===');
-    parts.push('Use this information to answer questions accurately:');
-
-    const MAX_KNOWLEDGE_CHARS = 20000; // Hard limit - truncate beyond this
-    let totalKnowledgeChars = 0;
-    let docsIncluded = 0;
-
-    for (const doc of knowledgeDocs) {
-      const text = doc.rawText || doc.content || '';
-      if (text) {
-        // Check if adding this doc would exceed limit
-        if (totalKnowledgeChars + text.length <= MAX_KNOWLEDGE_CHARS) {
-          parts.push(`\n[${doc.title || 'Document'}]`);
-          parts.push(text);
-          totalKnowledgeChars += text.length;
-          docsIncluded++;
-        } else {
-          // Would exceed limit - truncate remaining space
-          const remainingSpace = MAX_KNOWLEDGE_CHARS - totalKnowledgeChars;
-          if (remainingSpace > 100) {
-            const truncatedText = text.substring(0, remainingSpace);
-            parts.push(`\n[${doc.title || 'Document'} - TRUNCATED]`);
-            parts.push(truncatedText);
-            parts.push('\n[... remaining knowledge truncated due to size limit ...]');
-            totalKnowledgeChars = MAX_KNOWLEDGE_CHARS;
-          }
-          break; // Stop processing more docs
-        }
-      }
-    }
-
-    parts.push('\n=== END KNOWLEDGE BASE ===');
-    console.log(`✅ Knowledge base included: ${docsIncluded} docs, ${totalKnowledgeChars} chars (limit: ${MAX_KNOWLEDGE_CHARS})`);
+    const maxPromptChars = 1500;
+    const truncatedPrompt = agent.prompt.length > maxPromptChars
+      ? agent.prompt.substring(0, maxPromptChars)
+      : agent.prompt;
+    parts.push('\nYour role and instructions:');
+    parts.push(truncatedPrompt);
   }
 
   // ===== CALL START BEHAVIOR =====
