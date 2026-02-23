@@ -237,10 +237,12 @@ export class GeminiLiveSession extends EventEmitter {
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
     // MANAGER DIRECTIVE (2026-02-24 400-ERROR FIX): Use gemini-2.0-flash-exp
-    // Reason: 400 error indicates setup frame is malformed or model is not whitelisted for Bidi
-    // gemini-2.0-flash-exp is confirmed stable for bidiGenerateContent WebSocket handshakes
-    // Testing without -latest/-preview suffixes to clear 400 error
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-live';
+    // CRITICAL FIX: gemini-2.0-flash-live DOES NOT EXIST
+    // Only these models support bidiGenerateContent:
+    //   - gemini-2.5-flash-native-audio-latest (recommended)
+    //   - gemini-2.5-flash-native-audio-preview-12-2025
+    //   - gemini-2.0-flash-exp-image-generation
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-latest';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
