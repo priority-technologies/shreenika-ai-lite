@@ -236,9 +236,10 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
-    // CRITICAL: Use preview model (full name with date suffix) available in v1beta API
-    // Documentation: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-live-api
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-preview-native-audio-12-2025';
+    // CRITICAL: Use gemini-2.0-flash-exp (CONFIRMED working model for bidiGenerateContent)
+    // Only model with confirmed support for streaming audio via bidiGenerateContent
+    // Source: Google AI Developers Forum - model compatibility research
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.0-flash-exp';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
@@ -304,7 +305,9 @@ export class GeminiLiveSession extends EventEmitter {
   async connect() {
     return new Promise((resolve, reject) => {
       let resolved = false;
-      const url = `${GEMINI_LIVE_ENDPOINT}?key=${this.apiKey}`;
+      // CRITICAL FIX: Use correct WebSocket URL format with model in path
+      // Format: wss://generativelanguage.googleapis.com/v1beta/models/{MODEL}:BidiGenerateContent?key={API_KEY}&alt=ws
+      const url = `wss://generativelanguage.googleapis.com/v1beta/models/${this.model}:BidiGenerateContent?key=${this.apiKey}&alt=ws`;
       const connectionStartTime = Date.now();
 
       console.log(`\n🔌 GEMINI LIVE CONNECTION STARTING`);
