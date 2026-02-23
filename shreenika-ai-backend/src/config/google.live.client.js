@@ -305,10 +305,10 @@ export class GeminiLiveSession extends EventEmitter {
   async connect() {
     return new Promise((resolve, reject) => {
       let resolved = false;
-      // MANAGER DIRECTIVE (2026-02-24): Use /ws/ path for Multimodal Live API (NOT /v1beta/models/)
-      // REST API and Live WebSocket API use different URL structures
-      // Live API requires persistent stateful connection via /ws/ path
-      const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService/BidiGenerateContent?key=${this.apiKey}`;
+      // MANAGER DIRECTIVE (2026-02-24 UPDATED): Use "Direct Model Path" format for AI Studio key
+      // Format: wss://generativelanguage.googleapis.com/v1beta/models/{MODEL}:bidiGenerateContent?key={API_KEY}
+      // Note: lowercase 'bidi' not 'Bidi'. Model name MUST be in path. This is the only format whitelisted for AI Studio keys.
+      const url = `wss://generativelanguage.googleapis.com/v1beta/models/${this.model}:bidiGenerateContent?key=${this.apiKey}`;
       const connectionStartTime = Date.now();
 
       console.log(`\n🔌 GEMINI LIVE CONNECTION STARTING`);
