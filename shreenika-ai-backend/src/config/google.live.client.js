@@ -236,9 +236,9 @@ export class GeminiLiveSession extends EventEmitter {
 
     this.apiKey = apiKey;
     // Gemini Live API model: env var > options > fallback
-    // CRITICAL: Use gemini-2.5-flash-native-audio (ONLY model supporting bidiGenerateContent with audio)
+    // CRITICAL: Use preview model (full name with date suffix) available in v1beta API
     // Documentation: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/2-5-flash-live-api
-    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio';
+    this.model = options.model || process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-preview-native-audio-12-2025';
     this.voice = options.voice || process.env.GEMINI_LIVE_VOICE || GEMINI_VOICES.AOEDE;
     this.systemInstruction = options.systemInstruction || '';
     this.cacheId = options.cacheId || null; // Context Caching support
