@@ -320,9 +320,12 @@ export class GeminiLiveSession extends EventEmitter {
       console.log(`   ├─ Voice: ${this.voice}`);
       console.log(`   ├─ API Key present: ${!!this.apiKey}`);
       console.log(`   ├─ Reconnect attempt: ${this.reconnectAttempts}/${this.maxReconnectAttempts}`);
+      console.log(`   ├─ WebSocket URL: wss://generativelanguage.googleapis.com/v1beta/models/${this.model}:bidiGenerateContent?key=[REDACTED]`);
       console.log(`   └─ Timestamp: ${new Date().toISOString()}\n`);
 
+      console.log(`   ⏳ Creating WebSocket connection...`);
       this.ws = new WebSocket(url);
+      console.log(`   ✓ WebSocket object created, waiting for connection events...\n`);
 
       // DIAGNOSTIC: Capture HTTP upgrade response details
       this.ws.on('unexpected-response', (req, res) => {
@@ -369,6 +372,8 @@ export class GeminiLiveSession extends EventEmitter {
         console.error(`   Code: ${error.code}`);
         console.error(`   Status Code: ${error.response?.statusCode || 'N/A'}`);
         console.error(`   Response: ${error.response?.body || error.response || 'N/A'}`);
+        console.error(`   Errno: ${error.errno || 'N/A'}`);
+        console.error(`   Syscall: ${error.syscall || 'N/A'}`);
         console.error(`   Full Error:`, JSON.stringify(error, null, 2));
         this.emit('error', error);
         // Attempt reconnect (FIX 3)
