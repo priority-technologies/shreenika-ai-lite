@@ -346,6 +346,9 @@ export class GeminiLiveSession extends EventEmitter {
         const elapsed = Date.now() - connectionStartTime;
         console.error(`❌ WebSocket ERROR (${elapsed}ms):`, error.message);
         console.error(`   Code: ${error.code}`);
+        console.error(`   Status Code: ${error.response?.statusCode || 'N/A'}`);
+        console.error(`   Response: ${error.response?.body || error.response || 'N/A'}`);
+        console.error(`   Full Error:`, JSON.stringify(error, null, 2));
         this.emit('error', error);
         // Attempt reconnect (FIX 3)
         this._handleReconnect(error);
@@ -669,7 +672,9 @@ export class GeminiLiveSession extends EventEmitter {
    */
   _send(message) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
+      const jsonString = JSON.stringify(message);
+      console.log(`📤 SENDING TO GEMINI (${jsonString.length} chars):\n${jsonString}\n`);
+      this.ws.send(jsonString);
     }
   }
 
