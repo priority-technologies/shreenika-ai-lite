@@ -3,10 +3,10 @@
 // ==============================
 
 // Auth server (login, google oauth, token issuing)
-const AUTH_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+const AUTH_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.us-central1.run.app";
 
 // Core API server (agents, calls, contacts, billing)
-const CORE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+const CORE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.us-central1.run.app";
 
 // ==============================
 // GENERIC API FETCH

@@ -223,7 +223,7 @@ const ProfileSettings: React.FC = () => {
     setTimeout(() => setKeyCopied(false), 2000);
   };
 
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.us-central1.run.app";
 
   const apiEndpoints = [
     { method: 'GET', path: '/api/v1/agents', desc: 'List all agents' },

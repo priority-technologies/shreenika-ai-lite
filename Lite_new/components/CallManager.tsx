@@ -91,7 +91,7 @@ const CallManager: React.FC<CallManagerProps> = ({ leads, logs, setLogs, agent }
 
   // Socket.IO connection for real-time call updates
   useEffect(() => {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.us-central1.run.app";
 
     console.log(`📡 Connecting to Socket.IO at ${apiBase}`);
 

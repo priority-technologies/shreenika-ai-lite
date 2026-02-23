@@ -63,7 +63,7 @@ export default function Auth({ onLogin }: AuthProps) {
      GOOGLE LOGIN (ADDED)
   ========================= */
   const handleGoogleLogin = () => {
-    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.asia-south1.run.app";
+    const apiBase = import.meta.env.VITE_API_BASE_URL || "https://shreenika-ai-backend-507468019722.us-central1.run.app";
     window.location.href = `${apiBase}/auth/google`;
   };
 
