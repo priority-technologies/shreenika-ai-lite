@@ -321,6 +321,19 @@ export class GeminiLiveSession extends EventEmitter {
 
       this.ws = new WebSocket(url);
 
+      // DIAGNOSTIC: Capture HTTP upgrade response details
+      this.ws.on('unexpected-response', (req, res) => {
+        const statusCode = res.statusCode;
+        const headers = JSON.stringify(res.headers, null, 2);
+        let body = '';
+        res.on('data', chunk => { body += chunk.toString(); });
+        res.on('end', () => {
+          console.error(`\n🔴 UNEXPECTED HTTP RESPONSE (${statusCode}):`);
+          console.error(`Headers:\n${headers}`);
+          console.error(`Body:\n${body || '(empty)'}\n`);
+        });
+      });
+
       this.ws.on('open', () => {
         const elapsed = Date.now() - connectionStartTime;
         console.log(`✅ WebSocket OPEN (${elapsed}ms)`);
