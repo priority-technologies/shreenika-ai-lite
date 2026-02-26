@@ -3,6 +3,45 @@ import { VoiceService } from './voice.service.js';
 import { testAgentSessions } from './test-agent.controller.js';
 
 /**
+ * Detect audio format by checking magic bytes and structure
+ * @param {Buffer} audioBuffer - Audio data buffer
+ * @returns {string} - Format: 'pcm16', 'webm', 'mp4', or 'unknown'
+ */
+function detectAudioFormat(audioBuffer) {
+  if (!audioBuffer || audioBuffer.length < 4) return 'unknown';
+
+  const magic = audioBuffer.slice(0, 4);
+
+  // WebM container: 0x1A 0x45 0xDF 0xA3
+  if (magic[0] === 0x1A && magic[1] === 0x45 && magic[2] === 0xDF && magic[3] === 0xA3) {
+    return 'webm';
+  }
+
+  // MP4 container: Has 'ftyp' at bytes 4-7 (check: 0x66 0x74 0x79 0x70)
+  if (audioBuffer.length >= 8 && audioBuffer[4] === 0x66 && audioBuffer[5] === 0x74 &&
+      audioBuffer[6] === 0x79 && audioBuffer[7] === 0x70) {
+    return 'mp4';
+  }
+
+  // Raw PCM: Analyze sample distribution
+  // PCM 16-bit samples vary across the full range, not concentrated in one byte
+  if (audioBuffer.length >= 100) {
+    const byteDistribution = new Map();
+    for (let i = 0; i < Math.min(100, audioBuffer.length); i++) {
+      byteDistribution.set(audioBuffer[i], (byteDistribution.get(audioBuffer[i]) || 0) + 1);
+    }
+
+    // If most bytes are the same value, it's likely silence or corrupted data
+    const maxFreq = Math.max(...byteDistribution.values());
+    if (maxFreq < 30) { // PCM should have good distribution
+      return 'pcm16';
+    }
+  }
+
+  return 'unknown';
+}
+
+/**
  * Handles WebSocket connections for browser-based test agent calls
  * Bridges browser audio <-> Gemini Live API
  *
@@ -102,18 +141,47 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
         const message = JSON.parse(data);
 
         if (message.type === 'AUDIO' && message.audio) {
-          // Browser sends PCM audio (base64 encoded, typically 48kHz)
+          // FIX Gap 2: Validate audio format before processing
           const browserAudio = Buffer.from(message.audio, 'base64');
           const browserSampleRate = message.sampleRate || 48000;
+          const audioFormat = message.format || 'pcm16'; // Get format from browser
+
+          // FIX Gap 6: Detect and validate audio format
+          const detectedFormat = detectAudioFormat(browserAudio);
+          if (detectedFormat !== 'pcm16') {
+            console.error(`❌ Test Agent: Audio format mismatch - received ${detectedFormat}, expected pcm16`);
+            ws.send(JSON.stringify({
+              type: 'ERROR',
+              message: `Invalid audio format: ${detectedFormat}. Expected PCM 16-bit.`
+            }));
+            return; // Drop this chunk
+          }
 
           // VAD disabled in Test Agent for voice quality (no filtering)
           // Cost savings less important than correct voice detection
           // Will be re-enabled in real VOIP calls (Twilio/SansPBX)
 
-          // Resample from browser format (48kHz) to Gemini format (16kHz)
-          const geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
+          // FIX Gap 3, 7: Add try-catch and validation around resampling
+          let geminiAudio;
+          try {
+            // Resample from browser format to Gemini format (16kHz required)
+            geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
 
-          // [PHASE-1-DIAG] Log incoming audio with byte diagnostics
+            if (!geminiAudio || geminiAudio.length === 0) {
+              throw new Error('Resampling produced empty buffer');
+            }
+          } catch (resampleErr) {
+            console.error(`❌ Test Agent: Resampling failed - ${resampleErr.message}`);
+            console.error(`   ├─ Input: ${browserAudio.length} bytes at ${browserSampleRate}Hz`);
+            console.error(`   └─ Error: ${resampleErr.stack}`);
+            ws.send(JSON.stringify({
+              type: 'ERROR',
+              message: 'Audio resampling failed'
+            }));
+            return; // Drop this chunk
+          }
+
+          // [PHASE-2-DIAG] Log incoming audio with format validation
           if (audioChunksSentToGemini === 0) {
             const hexDump = browserAudio.slice(0, 20)
               .toString('hex')
@@ -121,25 +189,31 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
               .join(' ')
               .toUpperCase();
 
-            console.log(`[PHASE-1-DIAG] 🎤 Backend: First audio chunk from browser`);
-            console.log(`[PHASE-1-DIAG]   ├─ Bytes received: ${browserAudio.length}`);
-            console.log(`[PHASE-1-DIAG]   ├─ Sample rate: ${browserSampleRate}Hz`);
-            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
-            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+            console.log(`[PHASE-2-DIAG] 🎤 Backend: First audio chunk from browser`);
+            console.log(`[PHASE-2-DIAG]   ├─ Bytes received: ${browserAudio.length}`);
+            console.log(`[PHASE-2-DIAG]   ├─ Sample rate: ${browserSampleRate}Hz (actual from microphone)`);
+            console.log(`[PHASE-2-DIAG]   ├─ Format: ${detectedFormat} (validated)`);
+            console.log(`[PHASE-2-DIAG]   └─ First 20 bytes: ${hexDump}`);
 
             // Check for issues
             if (browserAudio.length === 0) {
-              console.warn(`[PHASE-1-DIAG] 🚨 ZERO-BYTE ALERT: Received 0 bytes from browser`);
-            }
-            const isSilent = !browserAudio.slice(0, Math.min(100, browserAudio.length))
-              .some(b => b !== 0 && b !== 255);
-            if (isSilent) {
-              console.warn(`[PHASE-1-DIAG] ⚠️  Audio appears silent (all 0x00 or 0xFF)`);
+              console.warn(`[PHASE-2-DIAG] 🚨 ZERO-BYTE ALERT: Received 0 bytes from browser`);
             }
 
-            console.log(`[PHASE-1-DIAG] 📊 Resampling: 48kHz (${browserAudio.length}B) → 16kHz (${geminiAudio.length}B)`);
+            const int16View = new Int16Array(browserAudio);
+            const isSilent = !Array.from(int16View.slice(0, Math.min(50, int16View.length)))
+              .some(sample => Math.abs(sample) > 100);
+            if (isSilent) {
+              console.warn(`[PHASE-2-DIAG] ⚠️  Audio appears silent (RMS too low)`);
+            } else {
+              console.log(`[PHASE-2-DIAG] ✅ Audio contains voice data`);
+            }
+
+            console.log(`[PHASE-2-DIAG] 📊 Resampling: ${browserSampleRate}Hz (${browserAudio.length}B) → 16kHz (${geminiAudio.length}B)`);
             const ratio = (geminiAudio.length / browserAudio.length).toFixed(3);
-            console.log(`[PHASE-1-DIAG]   └─ Ratio: ${ratio}x (expected ~0.333)`);
+            const expectedRatio = (16000 / browserSampleRate).toFixed(3);
+            console.log(`[PHASE-2-DIAG]   ├─ Ratio: ${ratio}x`);
+            console.log(`[PHASE-2-DIAG]   └─ Expected: ${expectedRatio}x (validates resampling correctness)`);
           }
 
           totalBytesFromBrowser += browserAudio.length;
@@ -347,49 +421,95 @@ function isVoiceActive(audioBuffer) {
  * Uses LINEAR INTERPOLATION for high-quality resampling
  * Fixes distortion issues from nearest-neighbor approach
  *
+ * FIX Gap 7: Added comprehensive error handling and validation
+ *
  * @param {Buffer} audioBuffer - Input audio buffer (PCM 16-bit)
  * @param {number} fromSampleRate - Input sample rate (e.g., 48000)
  * @param {number} toSampleRate - Output sample rate (e.g., 16000)
  * @returns {Buffer} Resampled audio buffer
+ * @throws {Error} If input is invalid or resampling fails
  */
 function resampleAudio(audioBuffer, fromSampleRate, toSampleRate) {
+  // FIX Gap 7: Input validation
+  if (!audioBuffer || audioBuffer.length === 0) {
+    throw new Error('Audio buffer is empty or null');
+  }
+
+  if (audioBuffer.length % 2 !== 0) {
+    throw new Error(`Audio buffer length must be even (16-bit samples), got ${audioBuffer.length}`);
+  }
+
+  if (!Number.isFinite(fromSampleRate) || fromSampleRate <= 0) {
+    throw new Error(`Invalid source sample rate: ${fromSampleRate}`);
+  }
+
+  if (!Number.isFinite(toSampleRate) || toSampleRate <= 0) {
+    throw new Error(`Invalid target sample rate: ${toSampleRate}`);
+  }
+
   if (fromSampleRate === toSampleRate) {
     return audioBuffer;
   }
 
-  const ratio = toSampleRate / fromSampleRate;
-  const inputSamples = audioBuffer.length / 2;
-  const outputSamples = Math.floor(inputSamples * ratio);
-  const outputBuffer = Buffer.alloc(outputSamples * 2);
+  try {
+    const ratio = toSampleRate / fromSampleRate;
+    const inputSamples = audioBuffer.length / 2;
+    const outputSamples = Math.floor(inputSamples * ratio);
 
-  // Linear interpolation resampling (high quality, fixes distortion)
-  for (let i = 0; i < outputSamples; i++) {
-    const inputIndex = i / ratio;
-    const inputIndexFloor = Math.floor(inputIndex);
-    const fraction = inputIndex - inputIndexFloor;
-
-    const inputOffset1 = inputIndexFloor * 2;
-    const inputOffset2 = (inputIndexFloor + 1) * 2;
-    const outputOffset = i * 2;
-
-    // Read 16-bit samples
-    let sample1 = 0;
-    let sample2 = 0;
-
-    if (inputOffset1 + 1 < audioBuffer.length) {
-      sample1 = audioBuffer.readInt16LE(inputOffset1);
+    // FIX Gap 7: Validate output size
+    if (!Number.isFinite(outputSamples) || outputSamples < 0) {
+      throw new Error(`Invalid output sample count: ${outputSamples}`);
     }
 
-    if (inputOffset2 + 1 < audioBuffer.length) {
-      sample2 = audioBuffer.readInt16LE(inputOffset2);
+    const outputBuffer = Buffer.alloc(outputSamples * 2);
+
+    // Linear interpolation resampling (high quality, fixes distortion)
+    for (let i = 0; i < outputSamples; i++) {
+      const inputIndex = i / ratio;
+      const inputIndexFloor = Math.floor(inputIndex);
+      const fraction = inputIndex - inputIndexFloor;
+
+      const inputOffset1 = inputIndexFloor * 2;
+      const inputOffset2 = (inputIndexFloor + 1) * 2;
+      const outputOffset = i * 2;
+
+      // Read 16-bit samples with boundary checks
+      let sample1 = 0;
+      let sample2 = 0;
+
+      if (inputOffset1 + 1 < audioBuffer.length) {
+        try {
+          sample1 = audioBuffer.readInt16LE(inputOffset1);
+        } catch (readErr) {
+          console.warn(`Warning: Failed to read sample at offset ${inputOffset1}, using 0`);
+          sample1 = 0;
+        }
+      }
+
+      if (inputOffset2 + 1 < audioBuffer.length) {
+        try {
+          sample2 = audioBuffer.readInt16LE(inputOffset2);
+        } catch (readErr) {
+          console.warn(`Warning: Failed to read sample at offset ${inputOffset2}, using sample1`);
+          sample2 = sample1;
+        }
+      } else {
+        sample2 = sample1; // Use previous sample at edge
+      }
+
+      // Linear interpolation
+      const interpolated = sample1 + (sample2 - sample1) * fraction;
+      const clamped = Math.max(-32768, Math.min(32767, Math.round(interpolated)));
+
+      try {
+        outputBuffer.writeInt16LE(clamped, outputOffset);
+      } catch (writeErr) {
+        throw new Error(`Failed to write sample at offset ${outputOffset}: ${writeErr.message}`);
+      }
     }
 
-    // Linear interpolation
-    const interpolated = sample1 + (sample2 - sample1) * fraction;
-    const clamped = Math.max(-32768, Math.min(32767, Math.round(interpolated)));
-
-    outputBuffer.writeInt16LE(clamped, outputOffset);
+    return outputBuffer;
+  } catch (error) {
+    throw new Error(`Resampling from ${fromSampleRate}Hz to ${toSampleRate}Hz failed: ${error.message}`);
   }
-
-  return outputBuffer;
 }

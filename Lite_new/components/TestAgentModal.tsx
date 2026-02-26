@@ -198,81 +198,110 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
     }
   };
 
-  const startAudioCapture = (audioContext: AudioContext, stream: MediaStream) => {
+  const startAudioCapture = async (audioContext: AudioContext, stream: MediaStream) => {
     try {
-      console.log('🎤 Test Agent: Starting audio capture (MediaRecorder - W3C Standard)');
+      console.log('🎤 Test Agent: Starting audio capture (AudioWorklet - RAW PCM)');
 
-      // INDUSTRY STANDARD: Use MediaRecorder API (W3C standard) instead of AnalyserNode
-      // MediaRecorder captures ACTUAL PCM audio from microphone, not frequency analysis data
-      // FIX: Remove invalid MIME type 'audio/webm;codecs=pcm' (not W3C standard)
-      // Let browser auto-select supported codec (opus for WebM, aac for MP4, etc.)
-      const mediaRecorder = new MediaRecorder(stream);
+      // FIX Gap 1: Use AudioWorklet for RAW PCM capture (not MediaRecorder container format)
+      // AudioWorklet processes audio samples directly from microphone
+      // Output: Pure 16-bit signed PCM audio at native sample rate
+
+      const actualSampleRate = audioContext.sampleRate;
+      console.log(`📊 Actual microphone sample rate: ${actualSampleRate}Hz`);
+
+      // Load AudioWorklet processor
+      try {
+        await audioContext.audioWorklet.addModule('/audio-worklet-processor.js');
+        console.log('✅ AudioWorklet processor loaded');
+      } catch (err) {
+        console.error('❌ Failed to load AudioWorklet processor:', err);
+        throw new Error('AudioWorklet not supported - use ScriptProcessorNode fallback');
+      }
+
+      // Create AudioWorklet node
+      const workletNode = new (window as any).AudioWorkletNode(
+        audioContext,
+        'raw-pcm-processor'
+      );
+
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(workletNode);
+      workletNode.connect(audioContext.destination);
 
       let audioChunksSent = 0;
       let totalAudioSize = 0;
 
-      // Handle audio data chunks from MediaRecorder
-      mediaRecorder.ondataavailable = (event: BlobEvent) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-          return;
-        }
+      // Receive raw PCM audio from AudioWorklet
+      workletNode.port.onmessage = (event) => {
+        try {
+          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+            return;
+          }
 
-        const blob = event.data;
-        const reader = new FileReader();
+          const { type, data, sampleRate, format, timestamp } = event.data;
 
-        reader.onload = () => {
-          const arrayBuffer = reader.result as ArrayBuffer;
-          const uint8Array = new Uint8Array(arrayBuffer);
+          if (type !== 'audio') return;
 
-          // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
+          // FIX Gap 5: Use actual sample rate, not hardcoded 48000
+          const audioBuffer = data; // Already Int16 from AudioWorklet
+
+          // [PHASE-2-DIAG] Log first audio chunk with format info
           if (audioChunksSent === 0) {
-            const hexDump = Array.from(uint8Array.slice(0, 20))
+            const hexDump = Array.from(new Uint8Array(audioBuffer).slice(0, 20))
               .map(b => b.toString(16).padStart(2, '0').toUpperCase())
               .join(' ');
-            console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured (MEDIARECORDER - W3C STANDARD)`);
-            console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${uint8Array.length}`);
-            console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: 48kHz (MediaRecorder native)`);
-            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE (native from microphone)`);
-            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+            console.log(`[PHASE-2-DIAG] 🎤 Browser: First audio chunk captured (AUDIOWORKLET - RAW PCM)`);
+            console.log(`[PHASE-2-DIAG]   ├─ Bytes: ${audioBuffer.byteLength}`);
+            console.log(`[PHASE-2-DIAG]   ├─ Sample Rate: ${sampleRate}Hz (actual microphone rate)`);
+            console.log(`[PHASE-2-DIAG]   ├─ Format: ${format} 16-bit LE (raw PCM from microphone)`);
+            console.log(`[PHASE-2-DIAG]   └─ First 20 bytes: ${hexDump}`);
 
             // Check for actual audio data (not silence)
-            const isSilent = !Array.from(uint8Array.slice(0, 100)).some(b => b !== 0 && b !== 255);
-            const hasNoise = Array.from(uint8Array.slice(0, 100)).some(b => Math.abs(b - 128) > 30);
+            const int16View = new Int16Array(audioBuffer);
+            const isSilent = !Array.from(int16View.slice(0, 100)).some(sample => Math.abs(sample) > 100);
+            const hasNoise = Array.from(int16View.slice(0, 100)).some(sample => Math.abs(sample) > 500);
 
             if (isSilent) {
-              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Microphone may not be working (audio is silent)`);
+              console.warn(`[PHASE-2-DIAG] ⚠️  WARNING: Microphone may not be working (audio is silent)`);
             } else if (hasNoise) {
-              console.log(`[PHASE-1-DIAG] ✅ Audio contains voice/noise data (microphone working!)`);
+              console.log(`[PHASE-2-DIAG] ✅ Audio contains voice/noise data (microphone working!)`);
             }
           }
 
           audioChunksSent++;
-          totalAudioSize += uint8Array.length;
+          totalAudioSize += audioBuffer.byteLength;
 
-          wsRef.current!.send(JSON.stringify({
-            type: 'AUDIO',
-            audio: uint8ArrayToBase64(uint8Array),
-            sampleRate: 48000
-          }));
-        };
-
-        reader.readAsArrayBuffer(blob);
+          // FIX Gap 6: Add error handling for WebSocket send
+          try {
+            wsRef.current!.send(JSON.stringify({
+              type: 'AUDIO',
+              audio: uint8ArrayToBase64(new Uint8Array(audioBuffer)),
+              sampleRate: sampleRate, // Send actual rate, not hardcoded
+              format: format // Include format for backend validation
+            }));
+          } catch (sendErr) {
+            console.error('❌ Failed to send audio to WebSocket:', sendErr);
+            // FIX Gap 7: Log error instead of failing silently
+          }
+        } catch (error) {
+          console.error('❌ Test Agent: Error processing audio chunk:', error);
+        }
       };
-
-      // Start recording with 20ms timeslice (50Hz chunks)
-      mediaRecorder.start(20);
 
       audioProcessorRef.current = {
         disconnect: () => {
           console.log(`✅ Test Agent: Audio capture stopped (${audioChunksSent} chunks, ${totalAudioSize} bytes total)`);
-          mediaRecorder.stop();
+          workletNode.disconnect();
+          source.disconnect();
         }
       } as any;
 
-      console.log('✅ Test Agent: Audio capture started (using MediaRecorder API - industry standard W3C)');
+      console.log('✅ Test Agent: Audio capture started (using AudioWorklet - raw PCM at native sample rate)');
     } catch (error) {
       console.error('❌ Test Agent: Error starting audio capture:', error);
-      setError('Failed to capture audio - check microphone permissions');
+      setError('Failed to capture audio - AudioWorklet not supported in your browser');
+      setStatus('error');
     }
   };
 
