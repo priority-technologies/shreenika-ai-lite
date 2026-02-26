@@ -34,14 +34,16 @@ class RawPCMProcessor extends AudioWorkletProcessor {
       // Send buffer when full (16KB chunks)
       if (this.sampleIndex >= this.bufferSize) {
         // Convert Float32 [-1, 1] to Int16 [-32768, 32767]
-        const int16Buffer = this.float32ToInt16(
+        const int16Array = this.float32ToInt16(
           this.sampleBuffer.slice(0, this.sampleIndex)
         );
 
-        // Send to main thread as binary data
+        // FIX: Send Int16Array.buffer (ArrayBuffer) instead of Buffer.from()
+        // AudioWorklet runs in Web Worker context (no Node.js Buffer API)
+        // Main thread will convert ArrayBuffer to base64
         this.port.postMessage({
           type: 'audio',
-          data: int16Buffer,
+          data: int16Array.buffer, // Send ArrayBuffer directly
           sampleRate: this.sampleRate,
           format: 'pcm16',
           timestamp: performance.now()
@@ -59,7 +61,7 @@ class RawPCMProcessor extends AudioWorkletProcessor {
   /**
    * Convert Float32 audio samples to Int16 (16-bit signed PCM)
    * @param {Float32Array} float32Samples - Samples in range [-1, 1]
-   * @returns {Buffer} - 16-bit signed PCM samples
+   * @returns {Int16Array} - 16-bit signed PCM samples
    */
   float32ToInt16(float32Samples) {
     const int16Samples = new Int16Array(float32Samples.length);
@@ -73,7 +75,7 @@ class RawPCMProcessor extends AudioWorkletProcessor {
       int16Samples[i] = Math.round(sample);
     }
 
-    return Buffer.from(int16Samples.buffer);
+    return int16Samples; // Return Int16Array directly
   }
 }
 
