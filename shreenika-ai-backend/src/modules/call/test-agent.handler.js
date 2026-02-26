@@ -330,6 +330,13 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
         });
       }
 
+      // Handle VoiceService session close - when Gemini session ends
+      voiceService.on('close', () => {
+        console.log(`🔌 Test Agent: Voice service closed - Gemini session ended`);
+        // Don't close the WebSocket yet - let client decide when to end
+        // The client can continue to send audio if needed
+      });
+
       // Note: error handler already attached before initialize()
     }
 

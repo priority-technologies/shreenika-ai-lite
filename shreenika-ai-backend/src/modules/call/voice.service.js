@@ -344,7 +344,9 @@ export class VoiceService extends EventEmitter {
     this.geminiSession.on('close', ({ code, reason }) => {
       console.log(`🔌 Gemini session closed: ${code} ${reason}`);
       if (!this.isClosed) {
-        this._handleSessionEnd();
+        this._handleSessionEnd().catch(err => {
+          console.error(`❌ Error in session end handler:`, err.message);
+        });
       }
     });
   }
