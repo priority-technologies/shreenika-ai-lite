@@ -59,11 +59,26 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 48000 });
       audioContextRef.current = audioContext;
 
+      // FIX: Resume audio context (required by modern browsers)
+      // Some browsers require explicit resume() after user interaction to start processing audio
+      if (audioContext.state === 'suspended') {
+        console.log('⏸️ Audio context suspended - resuming...');
+        await audioContext.resume();
+        console.log(`✅ Audio context resumed - state: ${audioContext.state}`);
+      } else {
+        console.log(`📊 Audio context state: ${audioContext.state}`);
+      }
+
+      // FIX: Create source that will be used by both analyzer AND worklet
+      // Store source reference so we can reuse it in startAudioCapture
       const source = audioContext.createMediaStreamSource(stream);
       const analyzer = audioContext.createAnalyser();
       analyzer.fftSize = 256;
       source.connect(analyzer);
       analyzerRef.current = analyzer;
+
+      // Store source for reuse in startAudioCapture
+      (audioContextRef.current as any)._mediaSource = source;
 
       console.log('✅ Test Agent: Audio context initialized (48kHz)');
 
@@ -224,9 +239,18 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
         'raw-pcm-processor'
       );
 
-      const source = audioContext.createMediaStreamSource(stream);
+      // FIX: Reuse the source created in initializeTestAgent (already connected to analyzer)
+      // Don't create a second source - connect the existing source to worklet
+      const source = (audioContext as any)._mediaSource;
+      if (!source) {
+        throw new Error('Media source not initialized - microphone may not be properly connected');
+      }
+
+      // Connect the same source to the worklet (it's already connected to analyzer)
       source.connect(workletNode);
-      workletNode.connect(audioContext.destination);
+
+      // Optional: Connect worklet to destination if you want to hear the captured audio
+      // workletNode.connect(audioContext.destination); // Commented out - no need to play back captured audio
 
       let audioChunksSent = 0;
       let totalAudioSize = 0;
