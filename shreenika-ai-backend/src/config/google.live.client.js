@@ -448,7 +448,7 @@ export class GeminiLiveSession extends EventEmitter {
       setup: {
         model: `models/${this.model}`,
         generation_config: {
-          response_modalities: ['AUDIO'],
+          response_modalities: ['TEXT', 'AUDIO'],  // FIX Gap 33: Request BOTH modalities, not AUDIO-only
           speech_config: {
             voice_config: {
               prebuilt_voice_config: {
@@ -589,8 +589,32 @@ export class GeminiLiveSession extends EventEmitter {
             }
           }
 
+          // FIX Gap 33: Graceful fallback when Gemini sends TEXT-only (no audio)
+          // This happens if response_modalities misconfigured or Gemini API changes
           if (!audioFound && content.modelTurn.parts.length > 0) {
-            console.warn(`⚠️ MODEL TURN RECEIVED BUT NO AUDIO FOUND - Gemini may not be outputting audio`);
+            console.error(`⚠️ CRITICAL: MODEL TURN RECEIVED BUT NO AUDIO FOUND`);
+
+            // Extract any text response for fallback
+            let textContent = '';
+            for (const part of content.modelTurn.parts) {
+              if (part.text) {
+                textContent += part.text;
+              }
+            }
+
+            if (textContent) {
+              console.error(`   ├─ TEXT RECEIVED: "${textContent.substring(0, 100)}${textContent.length > 100 ? '...' : ''}"`);
+              console.error(`   ├─ ATTEMPTING FALLBACK: text-to-speech via Web Speech API`);
+
+              // Emit special event so browser can use Web Speech API for TTS
+              this.emit('text-fallback', {
+                text: textContent,
+                reason: 'No audio in Gemini response - using text-to-speech fallback'
+              });
+            } else {
+              console.error(`   └─ NO TEXT OR AUDIO - COMPLETE FAILURE`);
+              this.emit('error', new Error('Gemini returned no audio or text'));
+            }
           }
         }
 

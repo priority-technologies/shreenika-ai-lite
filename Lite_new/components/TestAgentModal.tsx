@@ -152,6 +152,27 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
               console.log(`   └─ Duration: ${metricsRef.current.lastAudioTime ? metricsRef.current.lastAudioTime - metricsRef.current.firstAudioTime : 0}ms`);
             }
             handleEndCall();
+          } else if (message.type === 'TEXT_FALLBACK') {
+            // FIX Gap 33: Gemini returned TEXT-only (no audio)
+            // Use Web Speech API (browser TTS) as fallback
+            console.warn(`⚠️ [Gap 33 Fallback] Gemini returned TEXT-only response, using text-to-speech`);
+            console.warn(`   └─ Text: "${message.text.substring(0, 100)}${message.text.length > 100 ? '...' : ''}"`);
+
+            try {
+              // Use browser Web Speech API (SpeechSynthesis)
+              const utterance = new SpeechSynthesisUtterance(message.text);
+              utterance.rate = 1.0;
+              utterance.pitch = 1.0;
+              utterance.volume = 1.0;
+
+              speechSynthesis.cancel(); // Cancel any previous speech
+              speechSynthesis.speak(utterance);
+
+              console.log('🔊 Text-to-Speech started via Web Speech API');
+            } catch (ttsErr) {
+              console.error('❌ Text-to-speech failed:', ttsErr);
+              setError('Gemini returned text-only response and text-to-speech unavailable');
+            }
           } else if (message.type === 'ERROR') {
             console.error('❌ Test Agent Error:', message.message);
             setError(message.message || 'Voice service error');

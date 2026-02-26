@@ -308,6 +308,22 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
         }
       });
 
+      // FIX Gap 33: Handle text-fallback when Gemini sends TEXT-only (no audio)
+      if (voiceService.geminiSession) {
+        voiceService.geminiSession.on('text-fallback', (fallbackData) => {
+          console.log(`⚠️ Test Agent: Gemini returned TEXT-only - sending fallback to browser`);
+          try {
+            ws.send(JSON.stringify({
+              type: 'TEXT_FALLBACK',
+              text: fallbackData.text,
+              reason: fallbackData.reason
+            }));
+          } catch (error) {
+            console.error('❌ Test Agent: Error sending text fallback:', error);
+          }
+        });
+      }
+
       // Note: error handler already attached before initialize()
     }
 
