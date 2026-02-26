@@ -12,7 +12,7 @@
  * - Handle transmission errors gracefully
  */
 
-import { geminiToTwilio, downsample24kTo8k, createTwilioMediaMessage } from '../call/audio.converter.js';
+import { geminiToTwilio, downsample24kTo8k, upsample24kTo44100, createTwilioMediaMessage } from '../call/audio.converter.js';
 
 export class AudioRouter {
   /**
@@ -121,11 +121,12 @@ export class AudioRouter {
     }
 
     try {
-      // Convert Gemini 24kHz → SansPBX 8kHz PCM Linear
-      const pcm8k = downsample24kTo8k(pcm24k);
+      // Convert Gemini 24kHz → SansPBX 44100Hz PCM Linear
+      // CRITICAL FIX (2026-02-24): SansPBX sends incoming at 44100Hz, expects output at same rate
+      const pcm44k = upsample24kTo44100(pcm24k);
 
       // Encode to base64 (NOT mulaw)
-      const base64Audio = pcm8k.toString('base64');
+      const base64Audio = pcm44k.toString('base64');
 
       // Create reverse-media event (SansPBX format)
       const reverseMediaEvent = {

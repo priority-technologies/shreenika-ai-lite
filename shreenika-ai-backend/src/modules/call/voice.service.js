@@ -23,6 +23,8 @@ import LatencyTracker from '../voice/latency-tracker.service.js';
 import { enhanceResponseForLatency } from '../voice/response-enhancer.service.js';
 import HedgeEngine from '../voice/hedge-engine.service.js';
 import { io } from '../../server.js';
+import VoiceServiceAdapter from './state-machine/voice-service-adapter.js';
+import MediaStreamStateMachineIntegration from './state-machine/mediastream-integration.js';
 
 /**
  * VoiceService class
@@ -43,6 +45,10 @@ export class VoiceService extends EventEmitter {
     this.voiceCustomization = null; // Voice customization service
     this.latencyTracker = new LatencyTracker(callId, agentId); // Track latency
     this.hedgeEngine = new HedgeEngine(callId, agentId); // Latency masking (Hedge Engine)
+
+    // State machine integration
+    this.stateMachineAdapter = null;
+    this.smIntegration = null;
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -145,6 +151,52 @@ export class VoiceService extends EventEmitter {
       }
 
       this.startTime = Date.now();
+
+      // Initialize state machine adapter
+      try {
+        this.stateMachineAdapter = new VoiceServiceAdapter(this, {
+          interruptionSensitivity: this.agent.speechSettings?.interruptionSensitivity || 0.5,
+          maxCallDuration: this.agent.maxCallDuration || 600,
+          voiceConfig: this.voiceConfig
+        });
+
+        this.stateMachineAdapter.initializeStateMachine(this.callId, this.agentId);
+
+        this.smIntegration = new MediaStreamStateMachineIntegration(
+          this,
+          this.stateMachineAdapter
+        );
+        this.smIntegration.setupStateActionListeners();
+
+        console.log(`✅ State machine initialized for call: ${this.callId}`);
+        console.log(`📊 State Machine Config:`);
+        console.log(`   ├─ Interruption Sensitivity: ${this.stateMachineAdapter.voiceService.stateMachineAdapter?.getCurrentState()?.context.interruptionSensitivity || 'N/A'}`);
+        console.log(`   └─ Max Duration: ${this.agent.maxCallDuration || 600}s`);
+      } catch (error) {
+        console.warn(`⚠️ State machine initialization failed (non-critical):`, error.message);
+      }
+
+      // Wire state machine filler actions to HedgeEngine
+      if (this.smIntegration && this.hedgeEngine) {
+        this.on('adapterStartFiller', () => {
+          console.log(`🔊 Voice Service: Starting filler playback`);
+          this.hedgeEngine.startFillerPlayback();
+        });
+
+        this.on('adapterStopFiller', () => {
+          console.log(`⏹️ Voice Service: Stopping filler playback`);
+          this.hedgeEngine.stopFillerPlayback();
+        });
+
+        // Forward HedgeEngine filler audio to browser/caller
+        this.hedgeEngine.on('playFiller', (fillerBuffer) => {
+          if (fillerBuffer) {
+            console.log(`🎙️ Filler audio: ${fillerBuffer.length} bytes`);
+            this.emit('audio', fillerBuffer);
+          }
+        });
+      }
+
       console.log(`✅ Voice service ready for call: ${this.callId}`);
 
     } catch (error) {
@@ -252,6 +304,9 @@ export class VoiceService extends EventEmitter {
         this._addConversationTurn('agent', this.currentTurnText, shouldEnhance);
         this.currentTurnText = '';
 
+        // 🔗 Notify state machine that Gemini finished
+        this._notifyStateMachineGeminiFinished();
+
         // Reset for next turn
         this.userSpeechStart = null;
       }
@@ -276,6 +331,12 @@ export class VoiceService extends EventEmitter {
     // Error
     this.geminiSession.on('error', (error) => {
       console.error(`❌ Gemini session error:`, error.message);
+
+      // 🔗 Notify state machine
+      if (this.stateMachineAdapter) {
+        this.stateMachineAdapter.onGeminiError(error);
+      }
+
       this.emit('error', error);
     });
 
@@ -331,7 +392,31 @@ export class VoiceService extends EventEmitter {
     if (this.audioChunksSent <= 3 || this.audioChunksSent % 10 === 0) {
       console.log(`🎤 Audio chunk #${this.audioChunksSent} sent to Gemini: ${pcmBuffer.length} bytes (${KB} KB), energy=${energyLevel.toFixed(0)}`);
     }
+
+    // 🔗 Emit to state machine
+    this._emitAudioChunkToStateMachine(pcmBuffer);
+
     this.geminiSession.sendAudio(pcmBuffer);
+  }
+
+  /**
+   * Emit audio chunk to state machine for processing
+   * @private
+   */
+  _emitAudioChunkToStateMachine(audioChunk) {
+    if (this.stateMachineAdapter) {
+      this.stateMachineAdapter.onAudioChunk(audioChunk);
+    }
+  }
+
+  /**
+   * Notify state machine that Gemini finished speaking
+   * @private
+   */
+  _notifyStateMachineGeminiFinished() {
+    if (this.stateMachineAdapter) {
+      this.stateMachineAdapter.onGeminiFinished();
+    }
   }
 
   /**

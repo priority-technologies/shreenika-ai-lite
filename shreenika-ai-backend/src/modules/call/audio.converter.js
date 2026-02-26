@@ -117,6 +117,45 @@ export const downsample24kTo8k = (pcm24k) => {
 };
 
 /**
+ * Upsample audio from 24kHz to 44100Hz (for SansPBX)
+ * @param {Buffer} pcm24k - PCM 16-bit at 24kHz from Gemini
+ * @returns {Buffer} - PCM 16-bit at 44100Hz for SansPBX
+ */
+export const upsample24kTo44100 = (pcm24k) => {
+  const samples24k = pcm24k.length / 2;
+  const samples44k = Math.floor(samples24k * 44100 / 24000);
+  const pcm44k = Buffer.alloc(samples44k * 2);
+
+  // Linear interpolation upsampling
+  for (let i = 0; i < samples44k; i++) {
+    const inputIndex = i * 24000 / 44100;
+    const inputIndexFloor = Math.floor(inputIndex);
+    const fraction = inputIndex - inputIndexFloor;
+
+    let sample1 = 0;
+    let sample2 = 0;
+
+    if (inputIndexFloor < samples24k) {
+      sample1 = pcm24k.readInt16LE(inputIndexFloor * 2);
+    }
+
+    if (inputIndexFloor + 1 < samples24k) {
+      sample2 = pcm24k.readInt16LE((inputIndexFloor + 1) * 2);
+    } else {
+      sample2 = sample1; // Last sample
+    }
+
+    // Linear interpolation
+    const interpolated = sample1 + (sample2 - sample1) * fraction;
+    const clamped = Math.max(-32768, Math.min(32767, Math.round(interpolated)));
+
+    pcm44k.writeInt16LE(clamped, i * 2);
+  }
+
+  return pcm44k;
+};
+
+/**
  * Convert Twilio mulaw 8kHz base64 to PCM 16kHz for Gemini
  * @param {string} base64Mulaw - Base64 encoded mulaw audio from Twilio
  * @returns {Buffer} - PCM 16-bit 16kHz buffer for Gemini Live
@@ -219,6 +258,7 @@ export default {
   encodeMulawBuffer,
   upsample8kTo16k,
   downsample24kTo8k,
+  upsample24kTo44100,
   twilioToGemini,
   geminiToTwilio,
   createTwilioMediaMessage,

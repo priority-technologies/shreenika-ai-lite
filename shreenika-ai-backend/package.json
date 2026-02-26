@@ -29,7 +29,8 @@
     "socket.io": "^4.8.3",
     "stripe": "^20.2.0",
     "twilio": "^4.23.0",
-    "ws": "^8.19.0"
+    "ws": "^8.19.0",
+    "xstate": "^5.28.0"
   },
   "devDependencies": {
     "@types/node": "^25.1.0",

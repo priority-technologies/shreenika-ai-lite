@@ -9,7 +9,7 @@ steps:
       - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:${SHORT_SHA}'
       - '.'
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=asia-south1'
+      - 'CLOUDSDK_COMPUTE_ZONE=us-central1'
 
   # Step 2: Push to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
@@ -17,7 +17,7 @@ steps:
       - 'push'
       - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
     env:
-      - 'CLOUDSDK_COMPUTE_ZONE=asia-south1'
+      - 'CLOUDSDK_COMPUTE_ZONE=us-central1'
 
   # Step 3: Deploy to Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -28,7 +28,7 @@ steps:
       - '--image'
       - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
       - '--region'
-      - 'asia-south1'
+      - 'us-central1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
@@ -39,14 +39,14 @@ steps:
       - '--timeout'
       - '3600'
       - '--update-env-vars'
-      - 'NODE_ENV=production,ENABLE_VOICE_AGENT=true,ENABLE_FILLERS=true,VAD_SILENCE_THRESHOLD=500,AUDIO_SAMPLE_RATE=16000'
+      - 'NODE_ENV=production,ENABLE_VOICE_AGENT=true,ENABLE_FILLERS=true,VAD_SILENCE_THRESHOLD=500,AUDIO_SAMPLE_RATE=16000,PUBLIC_BASE_URL=https://shreenika-ai-backend-507468019722.us-central1.run.app'
 
 images:
   - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:latest'
   - 'gcr.io/$PROJECT_ID/shreenika-ai-backend:${SHORT_SHA}'
 
 substitutions:
-  _REGION: 'asia-south1'
+  _REGION: 'us-central1'
   _SERVICE: 'shreenika-ai-backend'
 
 options:

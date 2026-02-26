@@ -94,6 +94,9 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
     // Handle incoming audio from browser
     let audioChunksSentToGemini = 0;
+    let totalBytesFromBrowser = 0;
+    let totalBytesResampledTo16k = 0;
+
     ws.on('message', async (data) => {
       try {
         const message = JSON.parse(data);
@@ -103,24 +106,49 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
           const browserAudio = Buffer.from(message.audio, 'base64');
           const browserSampleRate = message.sampleRate || 48000;
 
-          // ✅ VAD (Voice Activity Detection): Skip silent frames
-          // Reduces Gemini billing by ~30% (silence doesn't need AI processing)
-          // Threshold lowered to 0.003 to avoid filtering actual speech
-          if (!isVoiceActive(browserAudio)) {
-            // Silence detected - skip this chunk (saves ~$0.3/min on silence)
-            return;
-          }
+          // VAD disabled in Test Agent for voice quality (no filtering)
+          // Cost savings less important than correct voice detection
+          // Will be re-enabled in real VOIP calls (Twilio/SansPBX)
 
           // Resample from browser format (48kHz) to Gemini format (16kHz)
           const geminiAudio = resampleAudio(browserAudio, browserSampleRate, 16000);
+
+          // [PHASE-1-DIAG] Log incoming audio with byte diagnostics
+          if (audioChunksSentToGemini === 0) {
+            const hexDump = browserAudio.slice(0, 20)
+              .toString('hex')
+              .match(/.{1,2}/g)
+              .join(' ')
+              .toUpperCase();
+
+            console.log(`[PHASE-1-DIAG] 🎤 Backend: First audio chunk from browser`);
+            console.log(`[PHASE-1-DIAG]   ├─ Bytes received: ${browserAudio.length}`);
+            console.log(`[PHASE-1-DIAG]   ├─ Sample rate: ${browserSampleRate}Hz`);
+            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
+            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+            // Check for issues
+            if (browserAudio.length === 0) {
+              console.warn(`[PHASE-1-DIAG] 🚨 ZERO-BYTE ALERT: Received 0 bytes from browser`);
+            }
+            const isSilent = !browserAudio.slice(0, Math.min(100, browserAudio.length))
+              .some(b => b !== 0 && b !== 255);
+            if (isSilent) {
+              console.warn(`[PHASE-1-DIAG] ⚠️  Audio appears silent (all 0x00 or 0xFF)`);
+            }
+
+            console.log(`[PHASE-1-DIAG] 📊 Resampling: 48kHz (${browserAudio.length}B) → 16kHz (${geminiAudio.length}B)`);
+            const ratio = (geminiAudio.length / browserAudio.length).toFixed(3);
+            console.log(`[PHASE-1-DIAG]   └─ Ratio: ${ratio}x (expected ~0.333)`);
+          }
+
+          totalBytesFromBrowser += browserAudio.length;
+          totalBytesResampledTo16k += geminiAudio.length;
 
           // Send to Gemini Live (VoiceService logs if audio is dropped)
           if (voiceService) {
             voiceService.sendAudio(geminiAudio);
             audioChunksSentToGemini++;
-            if (audioChunksSentToGemini === 1) {
-              console.log(`🎤 Test Agent: First audio chunk sent to VoiceService (${geminiAudio.length} bytes)`);
-            }
           }
         } else if (message.type === 'PING') {
           // Keep-alive ping
@@ -140,11 +168,42 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
     });
 
     // Handle audio output from Gemini Live
+    let audioChunksFromGemini = 0;
+    let totalBytesFromGemini = 0;
+    let totalBytesResampledTo48k = 0;
+
     if (voiceService) {
       voiceService.on('audio', (audioData) => {
         try {
           // Gemini sends PCM 24kHz, resample to browser format (48kHz)
           const browserAudio = resampleAudio(audioData, 24000, 48000);
+
+          // [PHASE-1-DIAG] Log Gemini response with byte diagnostics
+          if (audioChunksFromGemini === 0) {
+            const hexDump = audioData.slice(0, 20)
+              .toString('hex')
+              .match(/.{1,2}/g)
+              .join(' ')
+              .toUpperCase();
+
+            console.log(`[PHASE-1-DIAG] 🎙️  Gemini: First audio response received`);
+            console.log(`[PHASE-1-DIAG]   ├─ Bytes from Gemini: ${audioData.length}`);
+            console.log(`[PHASE-1-DIAG]   ├─ Sample rate: 24kHz`);
+            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
+            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+            if (audioData.length === 0) {
+              console.warn(`[PHASE-1-DIAG] 🚨 ZERO-BYTE ALERT: Gemini returned 0 bytes`);
+            }
+
+            console.log(`[PHASE-1-DIAG] 📊 Resampling: 24kHz (${audioData.length}B) → 48kHz (${browserAudio.length}B)`);
+            const ratio = (browserAudio.length / audioData.length).toFixed(3);
+            console.log(`[PHASE-1-DIAG]   └─ Ratio: ${ratio}x (expected 2.0)`);
+          }
+
+          audioChunksFromGemini++;
+          totalBytesFromGemini += audioData.length;
+          totalBytesResampledTo48k += browserAudio.length;
 
           ws.send(JSON.stringify({
             type: 'AUDIO',
@@ -173,6 +232,28 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
     // Handle WebSocket closure
     ws.on('close', (code, reason) => {
       console.log(`🔌 Test Agent: WebSocket closed - ${sessionId} (Code: ${code}, Reason: ${reason})`);
+
+      // [PHASE-1-DIAG] Print final diagnostic summary
+      if (audioChunksSentToGemini > 0) {
+        console.log(`[PHASE-1-DIAG] 📊 TEST AGENT DIAGNOSTIC SUMMARY`);
+        console.log(`[PHASE-1-DIAG] ✅ Audio Flow Complete`);
+        console.log(`[PHASE-1-DIAG] ├─ Browser Input:`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Total Chunks: ${audioChunksSentToGemini}`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Total Bytes: ${totalBytesFromBrowser}`);
+        console.log(`[PHASE-1-DIAG] │  └─ Status: ${totalBytesFromBrowser > 0 ? '✅ Data flowing' : '❌ No data'}`);
+        console.log(`[PHASE-1-DIAG] ├─ Resample (48kHz→16kHz):`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Input: ${totalBytesFromBrowser}B`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Output: ${totalBytesResampledTo16k}B`);
+        console.log(`[PHASE-1-DIAG] │  └─ Ratio: ${(totalBytesResampledTo16k / totalBytesFromBrowser).toFixed(3)}x`);
+        console.log(`[PHASE-1-DIAG] ├─ Gemini Response:`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Total Chunks: ${audioChunksFromGemini}`);
+        console.log(`[PHASE-1-DIAG] │  ├─ Total Bytes: ${totalBytesFromGemini}`);
+        console.log(`[PHASE-1-DIAG] │  └─ Status: ${totalBytesFromGemini > 0 ? '✅ Data received' : '❌ No response'}`);
+        console.log(`[PHASE-1-DIAG] └─ Resample (24kHz→48kHz):`);
+        console.log(`[PHASE-1-DIAG]    ├─ Input: ${totalBytesFromGemini}B`);
+        console.log(`[PHASE-1-DIAG]    ├─ Output: ${totalBytesResampledTo48k}B`);
+        console.log(`[PHASE-1-DIAG]    └─ Ratio: ${totalBytesFromGemini > 0 ? (totalBytesResampledTo48k / totalBytesFromGemini).toFixed(3) : 'N/A'}x`);
+      }
 
       // Cleanup
       if (maxDurationTimer) {
@@ -243,7 +324,7 @@ function isVoiceActive(audioBuffer) {
   }
 
   const rms = Math.sqrt(sumSquares / samples);
-  const VOICE_THRESHOLD = 0.003; // ~0.3% of full scale amplitude (lowered from 0.008 to catch actual speech)
+  const VOICE_THRESHOLD = 0.004; // Very sensitive - catches even soft speech
 
   return rms > VOICE_THRESHOLD; // Voice active if RMS exceeds threshold
 }

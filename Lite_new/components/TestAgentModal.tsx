@@ -187,10 +187,38 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       source.connect(processor);
       processor.connect(audioContext.destination);
 
+      let audioChunksSent = 0;
+
       processor.onaudioprocess = (event) => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           const inputData = event.inputBuffer.getChannelData(0);
           const pcmData = convertFloat32ToPCM16(inputData);
+
+          // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
+          if (audioChunksSent === 0) {
+            const hexDump = Array.from(pcmData.slice(0, 20))
+              .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+              .join(' ');
+            console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured`);
+            console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${pcmData.length}`);
+            console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: 48kHz`);
+            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
+            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+            // Check for silence or RIFF header
+            const isSilent = !Array.from(pcmData.slice(0, 100)).some(b => b !== 0 && b !== 255);
+            const isRiff = pcmData[0] === 0x52 && pcmData[1] === 0x49 && pcmData[2] === 0x46 && pcmData[3] === 0x46;
+
+            if (isSilent) {
+              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Audio appears to be silent (all zeros/FFs)`);
+            }
+            if (isRiff) {
+              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Detected RIFF header - sending WAV file instead of raw PCM`);
+            }
+          }
+
+          audioChunksSent++;
+
           wsRef.current.send(JSON.stringify({
             type: 'AUDIO',
             audio: uint8ArrayToBase64(pcmData),
@@ -233,6 +261,28 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       const audioData = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         audioData[i] = binaryString.charCodeAt(i);
+      }
+
+      // [PHASE-1-DIAG] Log incoming audio from server
+      if (metricsRef.current.audioChunksReceived === 0) {
+        const hexDump = Array.from(audioData.slice(0, 20))
+          .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+          .join(' ');
+
+        console.log(`[PHASE-1-DIAG] 🎙️  Browser: First audio chunk from server`);
+        console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${audioData.length}`);
+        console.log(`[PHASE-1-DIAG]   ├─ Sample rate: ${sampleRate}Hz`);
+        console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
+        console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+        if (audioData.length === 0) {
+          console.warn(`[PHASE-1-DIAG] 🚨 ZERO-BYTE ALERT: Server returned 0 bytes`);
+        }
+        const isSilent = !Array.from(audioData.slice(0, Math.min(100, audioData.length)))
+          .some(b => b !== 0 && b !== 255);
+        if (isSilent) {
+          console.warn(`[PHASE-1-DIAG] ⚠️  Audio appears silent (all 0x00 or 0xFF)`);
+        }
       }
 
       // Convert PCM16 to Float32

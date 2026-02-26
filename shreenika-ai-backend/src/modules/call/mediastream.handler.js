@@ -246,6 +246,17 @@ export const createMediaStreamServer = (httpServer) => {
               await voiceService.initialize();
               console.log(`✅ VoiceService initialized for SansPBX: ${message.callId}`);
 
+              // 🔗 Log state machine status
+              if (voiceService.stateMachineAdapter) {
+                const smState = voiceService.stateMachineAdapter.getCurrentState();
+                console.log(`🎯 State Machine Initialized:`);
+                console.log(`   ├─ Current State: ${smState?.value || 'UNKNOWN'}`);
+                console.log(`   ├─ Interruption Sensitivity: ${smState?.context.interruptionSensitivity || 'N/A'}`);
+                console.log(`   └─ Max Duration: ${smState?.context.maxCallDuration || 600}s`);
+              } else {
+                console.warn(`⚠️ State machine not initialized for this call`);
+              }
+
               // Store session
               activeSessions.set(callSid, {
                 streamSid: message.streamId,
