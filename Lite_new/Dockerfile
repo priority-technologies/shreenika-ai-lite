@@ -1,4 +1,5 @@
 # Build stage
+# Force rebuild - invalidate cache (2026-02-26 14:00 - Deploy AnalyserNode audio fix)
 FROM node:20-slim AS builder
 
 WORKDIR /app
