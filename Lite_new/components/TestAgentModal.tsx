@@ -204,10 +204,9 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
 
       // INDUSTRY STANDARD: Use MediaRecorder API (W3C standard) instead of AnalyserNode
       // MediaRecorder captures ACTUAL PCM audio from microphone, not frequency analysis data
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=pcm',
-        audioBitsPerSecond: 48000 * 16 // 48kHz, 16-bit
-      });
+      // FIX: Remove invalid MIME type 'audio/webm;codecs=pcm' (not W3C standard)
+      // Let browser auto-select supported codec (opus for WebM, aac for MP4, etc.)
+      const mediaRecorder = new MediaRecorder(stream);
 
       let audioChunksSent = 0;
       let totalAudioSize = 0;
