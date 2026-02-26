@@ -221,8 +221,14 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
 
           // Send to Gemini Live (VoiceService logs if audio is dropped)
           if (voiceService) {
-            voiceService.sendAudio(geminiAudio);
-            audioChunksSentToGemini++;
+            try {
+              voiceService.sendAudio(geminiAudio);
+              audioChunksSentToGemini++;
+            } catch (sendErr) {
+              console.error(`❌ Test Agent: sendAudio failed - ${sendErr.message}`);
+              console.error(`   └─ This may indicate Gemini session is closed or error`);
+              // Don't close connection - client can keep trying
+            }
           }
         } else if (message.type === 'PING') {
           // Keep-alive ping
