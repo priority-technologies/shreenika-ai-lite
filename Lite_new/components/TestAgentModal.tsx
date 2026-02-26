@@ -143,6 +143,28 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
           } else if (message.type === 'PONG') {
             // Keep-alive response
             console.log('💓 Test Agent: Received pong');
+          } else if (message.type === 'INTERRUPT') {
+            // User interrupted agent - clear audio queue and stop playback
+            console.log('🤚 Test Agent: Interrupt signal received - clearing audio queue');
+
+            // Clear the audio queue (will stop queued audio from playing)
+            audioQueueRef.current = [];
+
+            // Stop current audio playback if any is playing
+            if (currentSourceRef.current) {
+              try {
+                currentSourceRef.current.stop();
+                currentSourceRef.current.disconnect();
+                currentSourceRef.current = null;
+              } catch (e) {
+                console.warn('⚠️  Error stopping audio source:', e);
+              }
+            }
+
+            // Mark as not playing so new audio can start when needed
+            isPlayingRef.current = false;
+
+            console.log('✅ Test Agent: Audio queue cleared, ready for next response');
           }
         } catch (error) {
           console.error('❌ Test Agent: Error parsing message:', error);

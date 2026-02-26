@@ -221,6 +221,19 @@ export const handleTestAgentUpgrade = async (ws, req, sessionId) => {
         // NOT sent to frontend per requirements
       });
 
+      // Handle user interruption - signal browser to clear audio queue
+      voiceService.on('interrupted', () => {
+        console.log(`🤚 Test Agent: User interrupted - sending INTERRUPT signal to browser`);
+        try {
+          ws.send(JSON.stringify({
+            type: 'INTERRUPT',
+            message: 'User interrupted agent'
+          }));
+        } catch (error) {
+          console.error('❌ Test Agent: Error sending interrupt signal:', error);
+        }
+      });
+
       // Note: error handler already attached before initialize()
     }
 
