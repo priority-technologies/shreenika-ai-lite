@@ -200,77 +200,80 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
 
   const startAudioCapture = (audioContext: AudioContext, stream: MediaStream) => {
     try {
-      console.log('🎤 Test Agent: Starting audio capture');
+      console.log('🎤 Test Agent: Starting audio capture (MediaRecorder - W3C Standard)');
 
-      const source = audioContext.createMediaStreamSource(stream);
-
-      // Use a more reliable approach: direct media stream analysis + processing
-      // Instead of deprecated ScriptProcessor, use AnalyserNode + periodic polling
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 2048;
-      source.connect(analyser);
-
-      // Also connect source to destination for audio playback monitoring
-      source.connect(audioContext.destination);
+      // INDUSTRY STANDARD: Use MediaRecorder API (W3C standard) instead of AnalyserNode
+      // MediaRecorder captures ACTUAL PCM audio from microphone, not frequency analysis data
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=pcm',
+        audioBitsPerSecond: 48000 * 16 // 48kHz, 16-bit
+      });
 
       let audioChunksSent = 0;
-      let dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let totalAudioSize = 0;
 
-      // Capture audio using periodic polling (more reliable than ScriptProcessor)
-      const captureInterval = setInterval(() => {
+      // Handle audio data chunks from MediaRecorder
+      mediaRecorder.ondataavailable = (event: BlobEvent) => {
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-          clearInterval(captureInterval);
           return;
         }
 
-        // Get time-domain data from analyser
-        analyser.getByteTimeDomainData(dataArray);
+        const blob = event.data;
+        const reader = new FileReader();
 
-        // Convert Uint8Array (time-domain) to Float32Array
-        const float32Data = new Float32Array(dataArray.length);
-        for (let i = 0; i < dataArray.length; i++) {
-          float32Data[i] = (dataArray[i] - 128) / 128; // Convert 0-255 to -1 to 1
-        }
+        reader.onload = () => {
+          const arrayBuffer = reader.result as ArrayBuffer;
+          const uint8Array = new Uint8Array(arrayBuffer);
 
-        const pcmData = convertFloat32ToPCM16(float32Data);
+          // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
+          if (audioChunksSent === 0) {
+            const hexDump = Array.from(uint8Array.slice(0, 20))
+              .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+              .join(' ');
+            console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured (MEDIARECORDER - W3C STANDARD)`);
+            console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${uint8Array.length}`);
+            console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: 48kHz (MediaRecorder native)`);
+            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE (native from microphone)`);
+            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
 
-        // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
-        if (audioChunksSent === 0) {
-          const hexDump = Array.from(pcmData.slice(0, 20))
-            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-            .join(' ');
-          console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured (ANALYSER MODE)`);
-          console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${pcmData.length}`);
-          console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: ~48kHz (approximated from analyser)`);
-          console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE (converted from time-domain)`);
-          console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+            // Check for actual audio data (not silence)
+            const isSilent = !Array.from(uint8Array.slice(0, 100)).some(b => b !== 0 && b !== 255);
+            const hasNoise = Array.from(uint8Array.slice(0, 100)).some(b => Math.abs(b - 128) > 30);
 
-          // Check for silence or noise
-          const isSilent = !Array.from(pcmData.slice(0, 100)).some(b => b !== 0 && b !== 255);
-          const hasNoise = Array.from(pcmData.slice(0, 100)).some(b => Math.abs(b - 128) > 30);
-
-          if (isSilent) {
-            console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Audio appears to be silent`);
-          } else if (hasNoise) {
-            console.log(`[PHASE-1-DIAG] ✅ Audio contains voice/noise data (good!)`);
+            if (isSilent) {
+              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Microphone may not be working (audio is silent)`);
+            } else if (hasNoise) {
+              console.log(`[PHASE-1-DIAG] ✅ Audio contains voice/noise data (microphone working!)`);
+            }
           }
+
+          audioChunksSent++;
+          totalAudioSize += uint8Array.length;
+
+          wsRef.current!.send(JSON.stringify({
+            type: 'AUDIO',
+            audio: uint8ArrayToBase64(uint8Array),
+            sampleRate: 48000
+          }));
+        };
+
+        reader.readAsArrayBuffer(blob);
+      };
+
+      // Start recording with 20ms timeslice (50Hz chunks)
+      mediaRecorder.start(20);
+
+      audioProcessorRef.current = {
+        disconnect: () => {
+          console.log(`✅ Test Agent: Audio capture stopped (${audioChunksSent} chunks, ${totalAudioSize} bytes total)`);
+          mediaRecorder.stop();
         }
+      } as any;
 
-        audioChunksSent++;
-
-        wsRef.current.send(JSON.stringify({
-          type: 'AUDIO',
-          audio: uint8ArrayToBase64(pcmData),
-          sampleRate: 48000
-        }));
-      }, 20); // Capture every 20ms (50Hz sampling interval)
-
-      audioProcessorRef.current = { disconnect: () => clearInterval(captureInterval) } as any;
-
-      console.log('✅ Test Agent: Audio capture started (using AnalyserNode - reliable method)');
+      console.log('✅ Test Agent: Audio capture started (using MediaRecorder API - industry standard W3C)');
     } catch (error) {
       console.error('❌ Test Agent: Error starting audio capture:', error);
-      setError('Failed to capture audio');
+      setError('Failed to capture audio - check microphone permissions');
     }
   };
 

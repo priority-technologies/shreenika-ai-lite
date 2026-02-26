@@ -448,7 +448,7 @@ export class GeminiLiveSession extends EventEmitter {
       setup: {
         model: `models/${this.model}`,
         generation_config: {
-          response_modalities: ['TEXT', 'AUDIO'],
+          response_modalities: ['AUDIO'],
           speech_config: {
             voice_config: {
               prebuilt_voice_config: {
