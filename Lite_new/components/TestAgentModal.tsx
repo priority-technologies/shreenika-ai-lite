@@ -203,53 +203,71 @@ export const TestAgentModal: React.FC<TestAgentModalProps> = ({ agentId, agentNa
       console.log('🎤 Test Agent: Starting audio capture');
 
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      audioProcessorRef.current = processor;
 
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+      // Use a more reliable approach: direct media stream analysis + processing
+      // Instead of deprecated ScriptProcessor, use AnalyserNode + periodic polling
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      // Also connect source to destination for audio playback monitoring
+      source.connect(audioContext.destination);
 
       let audioChunksSent = 0;
+      let dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      processor.onaudioprocess = (event) => {
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          const inputData = event.inputBuffer.getChannelData(0);
-          const pcmData = convertFloat32ToPCM16(inputData);
-
-          // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
-          if (audioChunksSent === 0) {
-            const hexDump = Array.from(pcmData.slice(0, 20))
-              .map(b => b.toString(16).padStart(2, '0').toUpperCase())
-              .join(' ');
-            console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured`);
-            console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${pcmData.length}`);
-            console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: 48kHz`);
-            console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE`);
-            console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
-
-            // Check for silence or RIFF header
-            const isSilent = !Array.from(pcmData.slice(0, 100)).some(b => b !== 0 && b !== 255);
-            const isRiff = pcmData[0] === 0x52 && pcmData[1] === 0x49 && pcmData[2] === 0x46 && pcmData[3] === 0x46;
-
-            if (isSilent) {
-              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Audio appears to be silent (all zeros/FFs)`);
-            }
-            if (isRiff) {
-              console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Detected RIFF header - sending WAV file instead of raw PCM`);
-            }
-          }
-
-          audioChunksSent++;
-
-          wsRef.current.send(JSON.stringify({
-            type: 'AUDIO',
-            audio: uint8ArrayToBase64(pcmData),
-            sampleRate: 48000
-          }));
+      // Capture audio using periodic polling (more reliable than ScriptProcessor)
+      const captureInterval = setInterval(() => {
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          clearInterval(captureInterval);
+          return;
         }
-      };
 
-      console.log('✅ Test Agent: Audio capture started');
+        // Get time-domain data from analyser
+        analyser.getByteTimeDomainData(dataArray);
+
+        // Convert Uint8Array (time-domain) to Float32Array
+        const float32Data = new Float32Array(dataArray.length);
+        for (let i = 0; i < dataArray.length; i++) {
+          float32Data[i] = (dataArray[i] - 128) / 128; // Convert 0-255 to -1 to 1
+        }
+
+        const pcmData = convertFloat32ToPCM16(float32Data);
+
+        // [PHASE-1-DIAG] Log first audio chunk with diagnostic info
+        if (audioChunksSent === 0) {
+          const hexDump = Array.from(pcmData.slice(0, 20))
+            .map(b => b.toString(16).padStart(2, '0').toUpperCase())
+            .join(' ');
+          console.log(`[PHASE-1-DIAG] 🎤 Browser: First audio chunk captured (ANALYSER MODE)`);
+          console.log(`[PHASE-1-DIAG]   ├─ Bytes: ${pcmData.length}`);
+          console.log(`[PHASE-1-DIAG]   ├─ Sample Rate: ~48kHz (approximated from analyser)`);
+          console.log(`[PHASE-1-DIAG]   ├─ Format: PCM 16-bit LE (converted from time-domain)`);
+          console.log(`[PHASE-1-DIAG]   └─ First 20 bytes: ${hexDump}`);
+
+          // Check for silence or noise
+          const isSilent = !Array.from(pcmData.slice(0, 100)).some(b => b !== 0 && b !== 255);
+          const hasNoise = Array.from(pcmData.slice(0, 100)).some(b => Math.abs(b - 128) > 30);
+
+          if (isSilent) {
+            console.warn(`[PHASE-1-DIAG] ⚠️  WARNING: Audio appears to be silent`);
+          } else if (hasNoise) {
+            console.log(`[PHASE-1-DIAG] ✅ Audio contains voice/noise data (good!)`);
+          }
+        }
+
+        audioChunksSent++;
+
+        wsRef.current.send(JSON.stringify({
+          type: 'AUDIO',
+          audio: uint8ArrayToBase64(pcmData),
+          sampleRate: 48000
+        }));
+      }, 20); // Capture every 20ms (50Hz sampling interval)
+
+      audioProcessorRef.current = { disconnect: () => clearInterval(captureInterval) } as any;
+
+      console.log('✅ Test Agent: Audio capture started (using AnalyserNode - reliable method)');
     } catch (error) {
       console.error('❌ Test Agent: Error starting audio capture:', error);
       setError('Failed to capture audio');
