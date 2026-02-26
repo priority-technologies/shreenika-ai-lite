@@ -1,6 +1,6 @@
 nul
 .env
 .env.*
-.env
-.env.*
 node_modules
+gen-lang-client-*.json
+# dist/ is pre-built with AnalyserNode fix and needed for deployment
