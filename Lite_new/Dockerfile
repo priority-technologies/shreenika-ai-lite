@@ -8,6 +8,7 @@ COPY package*.json ./
 
 RUN npm install
 
+# Force rebuild with fresh AnalyserNode code (2026-02-26 14:10)
 COPY . .
 
 RUN npm run build
