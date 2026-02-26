@@ -5,7 +5,6 @@ import Usage from "../usage/usage.model.js";
 import { getTwilioClient } from "../../config/twilio.client.js";
 import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
-import { VoicePipeline } from "../voice/voicePipeline.js";
 import { CallControlService, createCallControl } from "./call.control.service.js";
 import { createTTSService, shouldUseTTS } from "../voice/tts.service.js";
 import { VoiceService } from "./voice.service.js";

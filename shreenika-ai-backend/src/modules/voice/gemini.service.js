@@ -13,8 +13,10 @@ const vertexAI = new VertexAI({
   location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1'
 });
 
-// Determine which model to use
-const MODEL_ID = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+// ⚠️ DEPRECATED: GeminiService was used by old VoicePipeline (STT→LLM→TTS cycle)
+// That system has been replaced with Gemini Live (gemini-2.5-flash-native-audio-latest)
+// This file is kept for backwards compatibility but is NOT actively used in production
+const MODEL_ID = process.env.GEMINI_MODEL || 'gemini-1.5-flash'; // Legacy fallback
 
 export class GeminiService {
   /**
