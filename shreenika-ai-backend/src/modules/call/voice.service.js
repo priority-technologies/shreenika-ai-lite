@@ -417,6 +417,12 @@ export class VoiceService extends EventEmitter {
    */
   _notifyStateMachineGeminiFinished() {
     if (this.stateMachineAdapter) {
+      // CRITICAL FIX: Don't close Gemini session in test mode
+      // Test mode allows multiple turns without state machine lifecycle
+      if (this.isTestMode) {
+        console.log(`ℹ️ Test mode: Skipping state machine notification on Gemini finished`);
+        return;
+      }
       this.stateMachineAdapter.onGeminiFinished();
     }
   }
