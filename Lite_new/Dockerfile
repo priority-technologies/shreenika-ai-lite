@@ -1,11 +1,25 @@
+# Build stage
+FROM node:18-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build the frontend (creates dist/)
+RUN npm run build
+
 # Production stage
 FROM nginx:alpine
 
-# Force complete rebuild - bust all caches (2026-02-26 AnalyserNode deployment)
-# This ensures Docker doesn't use old cached layers with stale dist/
-
-# Copy pre-built dist directory (with AnalyserNode audio capture fix - index-DwZQSxlL.js)
-COPY dist /usr/share/nginx/html
+# Copy built dist directory from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
