@@ -45,8 +45,7 @@ class RawPCMProcessor extends AudioWorkletProcessor {
           type: 'audio',
           data: int16Array.buffer, // Send ArrayBuffer directly
           sampleRate: this.sampleRate,
-          format: 'pcm16',
-          timestamp: performance.now()
+          format: 'pcm16'
         });
 
         // Reset buffer
