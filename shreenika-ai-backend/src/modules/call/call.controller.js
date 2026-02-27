@@ -10,6 +10,7 @@ import { ProviderFactory } from "./providers/ProviderFactory.js";
 import { getAgentProviderOrFallback, getAgentPhoneNumber } from "./helpers/getAgentProvider.js";
 import { webhookEmitter } from "../webhook/webhook.emitter.js";
 import Agent from "../agent/agent.model.js";
+import { rateLimitService } from "./rate-limit.service.js";
 
 // Track active campaigns by ID (for pause/resume)
 let activeCampaigns = new Map(); // campaignId -> { active: boolean, paused: boolean }
@@ -204,6 +205,39 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
   const campaign = await Campaign.findById(campaignId);
   const agent = await Agent.findById(agentId);
 
+  // 🔴 GAP 13 FIX: Add permission validation before initiating calls
+  // Verify user owns campaign, agent is assigned, and user can initiate calls
+  if (!campaign) {
+    console.error(`❌ UNAUTHORIZED: Campaign not found: ${campaignId}`);
+    return;
+  }
+  if (!agent) {
+    console.error(`❌ UNAUTHORIZED: Agent not found: ${agentId}`);
+    return;
+  }
+  if (campaign.userId.toString() !== userId.toString()) {
+    console.error(`❌ UNAUTHORIZED: User ${userId} does not own campaign ${campaignId}`);
+    return;
+  }
+  if (!agent.userId || agent.userId.toString() !== userId.toString()) {
+    console.error(`❌ UNAUTHORIZED: User ${userId} does not own agent ${agentId}`);
+    return;
+  }
+  if (!campaign.agentIds || !campaign.agentIds.map(id => id.toString()).includes(agentId.toString())) {
+    console.error(`❌ UNAUTHORIZED: Agent ${agentId} is not assigned to campaign ${campaignId}`);
+    return;
+  }
+  console.log(`✅ Permission granted: User ${userId} can initiate calls with Agent ${agentId} in Campaign ${campaignId}`);
+
+  // 🔴 GAP 12 FIX: Add rate limiting check to prevent DOS attacks
+  const rateLimitStatus = rateLimitService.checkRateLimit(userId);
+  if (!rateLimitStatus.allowed) {
+    console.warn(`⚠️ RATE LIMIT EXCEEDED: User ${userId} attempted too many calls (${rateLimitStatus.attempted}/${rateLimitStatus.limit} per minute)`);
+    console.warn(`   └─ Reset in ${Math.ceil((rateLimitStatus.resetTime - Date.now()) / 1000)} seconds`);
+    return; // Skip call initiation
+  }
+  console.log(`✅ Rate limit OK: User ${userId} can initiate calls (${rateLimitStatus.remaining} remaining of ${rateLimitStatus.limit})`);
+
   // CRITICAL FIX (2026-02-18): Search in both Contact and Lead collections
   // Frontend may send either Contact IDs or Lead IDs
   let lead = await Lead.findById(leadId);
@@ -313,6 +347,11 @@ async function processSingleCall(campaignId, leadId, agentId, userId, callTimeou
         webhookUrl: `${process.env.PUBLIC_BASE_URL}/twilio/voice`,
         statusCallbackUrl: `${process.env.PUBLIC_BASE_URL}/twilio/status`
       });
+
+      // 🔴 GAP 12: Record this call attempt for rate limiting
+      rateLimitService.recordCall(userId);
+      const updatedStatus = rateLimitService.getStatus(userId);
+      console.log(`📊 Rate limit status: ${updatedStatus.attempted}/${updatedStatus.limit} calls in last minute`);
 
       call.twilioCallSid = callResult.callSid;
       call.providerCallId = callResult.providerCallId;

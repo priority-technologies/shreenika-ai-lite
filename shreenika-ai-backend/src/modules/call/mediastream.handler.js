@@ -169,6 +169,21 @@ export const createMediaStreamServer = (httpServer) => {
             sansPbxMetadata.isSansPBX = true;
             console.log(`📞 SansPBX metadata stored: streamId=${message.streamId}, callId=${message.callId}`);
 
+            // 🔴 GAP 2 FIX: Send answer acknowledgment back to SansPBX
+            // SansPBX needs confirmation that backend is ready to receive audio
+            const answerAckEvent = {
+              event: 'answer_ack',
+              callId: message.callId,
+              status: 'ready',
+              timestamp: new Date().toISOString()
+            };
+            try {
+              ws.send(JSON.stringify(answerAckEvent));
+              console.log(`✅ Sent answer_ack to SansPBX for call: ${message.callId}`);
+            } catch (ackError) {
+              console.warn(`⚠️ Failed to send answer_ack:`, ackError.message);
+            }
+
             // Initialize voice service for SansPBX
             try {
               const call = await Call.findOne({ providerCallId: message.callId });
@@ -242,9 +257,19 @@ export const createMediaStreamServer = (httpServer) => {
                 }
               });
 
-              // Initialize voice service
-              await voiceService.initialize();
-              console.log(`✅ VoiceService initialized for SansPBX: ${message.callId}`);
+              // Initialize voice service with timeout protection (Gap 2)
+              // If initialization hangs, fail gracefully instead of hanging forever
+              const initTimeout = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Voice service initialization timeout (60 seconds)')), 60000)
+              );
+              try {
+                await Promise.race([voiceService.initialize(), initTimeout]);
+                console.log(`✅ VoiceService initialized for SansPBX: ${message.callId}`);
+              } catch (initError) {
+                console.error(`❌ VoiceService initialization failed or timed out: ${initError.message}`);
+                ws.close();
+                return;
+              }
 
               // 🔗 Log state machine status
               if (voiceService.stateMachineAdapter) {
@@ -596,26 +621,73 @@ export const createMediaStreamServer = (httpServer) => {
       }
     });
 
-    // Handle WebSocket close
+    // Handle WebSocket close (Gap 23: Proper call cleanup and hangup handling)
     ws.on('close', async () => {
-      console.log(`🔌 Twilio Media Stream disconnected: ${callSid}`);
+      const provider = sansPbxMetadata.isSansPBX ? 'SansPBX' : 'Twilio';
+      console.log(`🔌 ${provider} Media Stream disconnected: ${callSid}`);
 
-      // Clean up duration monitoring
-      if (durationInterval) {
-        clearInterval(durationInterval);
+      if (!isClosing) {
+        isClosing = true;
+
+        // Clean up duration monitoring
+        if (durationInterval) {
+          clearInterval(durationInterval);
+        }
+
+        // Clean up CallControl
+        if (callControl) {
+          callControl.isActive = false;
+        }
+
+        // Close voice service gracefully
+        if (voiceService) {
+          try {
+            await voiceService.close();
+            console.log(`✅ VoiceService closed for call: ${callSid}`);
+          } catch (closeError) {
+            console.warn(`⚠️ Error closing VoiceService: ${closeError.message}`);
+          }
+        }
+
+        // Update call status in database (if not test mode and call exists)
+        if (sansPbxMetadata.callId) {
+          try {
+            const callUpdate = await Call.findOneAndUpdate(
+              { providerCallId: sansPbxMetadata.callId },
+              {
+                status: 'ENDED',
+                endedAt: new Date(),
+                failureReason: 'WebSocket connection closed',
+                metadata: {
+                  disconnectReason: 'client_hangup',
+                  provider: provider,
+                  totalDuration: callControl ? callControl.getCallDuration() : 0
+                }
+              },
+              { new: true }
+            );
+            if (callUpdate) {
+              console.log(`✅ Call updated to ENDED status: ${sansPbxMetadata.callId}`);
+            }
+          } catch (dbError) {
+            console.warn(`⚠️ Failed to update call status in DB: ${dbError.message}`);
+          }
+        }
+
+        // Log call termination metrics
+        if (audioRouter) {
+          const metrics = audioRouter.getMetrics();
+          console.log(`📊 CALL ENDED - Audio Metrics:`);
+          console.log(`   ├─ Provider: ${metrics.provider}`);
+          console.log(`   ├─ Total chunks sent: ${metrics.audioChunksSent}`);
+          console.log(`   ├─ Failed chunks: ${metrics.audioChunksFailed}`);
+          console.log(`   ├─ Success rate: ${metrics.successRate}`);
+          console.log(`   ├─ Total data: ${metrics.totalKBSent} KB`);
+          console.log(`   └─ Duration: ${metrics.elapsedMs}ms`);
+        }
+
+        activeSessions.delete(callSid);
       }
-
-      // Clean up CallControl
-      if (callControl) {
-        callControl.isActive = false;
-      }
-
-      if (voiceService) {
-        await voiceService.close();
-      }
-
-      activeSessions.delete(callSid);
-      isClosing = true;
     });
 
     // Handle WebSocket errors

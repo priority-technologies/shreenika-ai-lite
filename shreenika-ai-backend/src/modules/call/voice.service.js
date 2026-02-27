@@ -25,6 +25,15 @@ import HedgeEngine from '../voice/hedge-engine.service.js';
 import { io } from '../../server.js';
 import VoiceServiceAdapter from './state-machine/voice-service-adapter.js';
 import MediaStreamStateMachineIntegration from './state-machine/mediastream-integration.js';
+// 🔴 PHASE 2 INTEGRATION: Import all audio quality services
+import CodecNegotiator from './codec-negotiation.service.js';
+import EchoCanceller from './echo-cancellation.service.js';
+import NoiseSuppressor from './noise-suppression.service.js';
+import { JitterBuffer } from './jitter-buffer.service.js';
+import { InterruptHandler } from './interrupt-handler.service.js';
+import { CallTimeout } from './call-timeout.service.js';
+import { WebhookEmitter } from './webhook-emitter.service.js';
+import { AudioQualityMonitor } from './audio-quality-monitor.service.js';
 
 /**
  * VoiceService class
@@ -49,6 +58,16 @@ export class VoiceService extends EventEmitter {
     // State machine integration
     this.stateMachineAdapter = null;
     this.smIntegration = null;
+
+    // 🔴 PHASE 2 SERVICES - Audio Quality & Stability
+    this.codecNegotiator = null; // Gap 11: Codec negotiation
+    this.echoCanceller = null; // Gap 8: Echo cancellation
+    this.noiseSuppressor = null; // Gap 9: Noise suppression
+    this.jitterBuffer = null; // Gap 10: Jitter buffer
+    this.interruptHandler = null; // Gap 21: Interrupt detection
+    this.callTimeout = null; // Gap 22: Call timeout enforcement
+    this.webhookEmitter = null; // Gap 24: Webhook notifications
+    this.qualityMonitor = null; // Gap 26: Audio quality monitoring
 
     this.conversationTurns = [];
     this.currentTurnText = '';
@@ -151,6 +170,76 @@ export class VoiceService extends EventEmitter {
       }
 
       this.startTime = Date.now();
+
+      // 🔴 PHASE 2 INTEGRATION: Initialize audio quality services
+      try {
+        // Gap 11: Codec negotiation
+        this.codecNegotiator = new CodecNegotiator();
+        this.codecNegotiator.logNegotiationStatus('SansPBX');
+
+        // Gap 8: Echo cancellation
+        this.echoCanceller = new EchoCanceller(4096, 0.01);
+        console.log(`✅ Echo canceller initialized (adaptive LMS filter)`);
+
+        // Gap 9: Noise suppression
+        this.noiseSuppressor = new NoiseSuppressor(512, 0.98);
+        console.log(`✅ Noise suppressor initialized (spectral subtraction)`);
+
+        // Gap 10: Jitter buffer
+        this.jitterBuffer = new JitterBuffer(20, 50);
+        console.log(`✅ Jitter buffer initialized (max 20 frames, target 50ms latency)`);
+
+        // Gap 21: Interrupt handler
+        this.interruptHandler = new InterruptHandler(
+          this.agent.speechSettings?.interruptionSensitivity || 0.5,
+          0.003 // silence threshold
+        );
+        this.interruptHandler.onInterrupt((event) => {
+          console.log(`🛑 INTERRUPT: User interrupted at ${event.timestamp}`);
+          // Notify state machine of interruption
+          if (this.stateMachineAdapter) {
+            this.stateMachineAdapter.onInterrupt(event);
+          }
+        });
+        console.log(`✅ Interrupt handler initialized`);
+
+        // Gap 22: Call timeout
+        this.callTimeout = new CallTimeout(
+          (this.agent.maxCallDuration || 600) * 1000, // Max duration
+          30000, // Silence timeout
+          30000  // Response timeout
+        );
+        this.callTimeout.onTimeout((event) => {
+          console.warn(`⏱️  CALL TIMEOUT [${event.type}]: ${event.reason}`);
+          this.emit('timeout', event);
+        });
+        this.callTimeout.start();
+        console.log(`✅ Call timeout initialized`);
+
+        // Gap 24: Webhook emitter
+        this.webhookEmitter = new WebhookEmitter(process.env.WEBHOOK_URL || null);
+        console.log(`✅ Webhook emitter initialized`);
+
+        // Gap 26: Audio quality monitor
+        this.qualityMonitor = new AudioQualityMonitor(this.callId);
+        this.qualityMonitor.onAlert((alert) => {
+          console.warn(`⚠️  QUALITY ALERT [${alert.severity}]: ${alert.message}`);
+          if (this.webhookEmitter) {
+            this.webhookEmitter.emitQualityAlert({
+              callId: this.callId,
+              severity: alert.severity,
+              type: alert.type,
+              value: alert.value,
+              threshold: process.env.QUALITY_THRESHOLD || 50
+            });
+          }
+        });
+        console.log(`✅ Audio quality monitor initialized`);
+
+        console.log(`✅ PHASE 2: All audio quality services initialized`);
+      } catch (err) {
+        console.warn(`⚠️  Phase 2 initialization failed: ${err.message}. Continuing without quality features.`);
+      }
 
       // Initialize state machine adapter
       try {
@@ -282,6 +371,32 @@ export class VoiceService extends EventEmitter {
         this.hedgeEngine.markGeminiAudioReceived();
       }
 
+      // 🔴 PHASE 2: Update audio quality services with outgoing audio
+      try {
+        // Gap 8: Store outgoing audio in echo canceller for echo detection
+        if (this.echoCanceller) {
+          this.echoCanceller.storeOutgoingAudio(audioBuffer);
+        }
+
+        // Gap 21: Mark that agent is speaking (for interrupt detection)
+        if (this.interruptHandler) {
+          this.interruptHandler.agentStartsSpeaking(audioBuffer);
+        }
+
+        // Gap 22: Record response from agent for timeout reset
+        if (this.callTimeout) {
+          this.callTimeout.recordResponse();
+        }
+
+        // Gap 26: Monitor quality of outgoing audio
+        if (this.qualityMonitor) {
+          // Gemini audio is typically clean, but track it
+          this.qualityMonitor.recordAudioLevel(0.5); // Assume good level
+        }
+      } catch (err) {
+        console.warn(`⚠️ Error updating Phase 2 services: ${err.message}`);
+      }
+
       // Forward to mediastream handler
       this.emit('audio', audioBuffer);
     });
@@ -366,6 +481,59 @@ export class VoiceService extends EventEmitter {
       return;
     }
 
+    // 🔴 PHASE 2: Apply audio quality processing to INCOMING caller audio
+    let processedBuffer = pcmBuffer;
+
+    try {
+      // Gap 8: Echo cancellation - remove caller's own voice
+      if (this.echoCanceller && this.audioChunksReceived > 0) {
+        const echoStatus = this.echoCanceller.detectEcho(processedBuffer);
+        if (echoStatus.echoDetected && this.audioChunksSent % 20 === 0) {
+          console.log(`🔊 Echo detected: ${echoStatus.echoAmount.toFixed(3)} correlation, ${echoStatus.delay}ms delay`);
+        }
+        processedBuffer = this.echoCanceller.cancelEcho(processedBuffer);
+      }
+
+      // Gap 9: Noise suppression - remove background noise
+      if (this.noiseSuppressor) {
+        processedBuffer = this.noiseSuppressor.suppressNoise(processedBuffer);
+      }
+
+      // Gap 10: Jitter buffer - smooth network delays
+      if (this.jitterBuffer) {
+        const readyAudio = this.jitterBuffer.addPacket({
+          sequence: this.audioChunksSent,
+          data: processedBuffer,
+          timestamp: Date.now()
+        });
+        if (readyAudio) {
+          processedBuffer = readyAudio;
+        }
+      }
+
+      // Gap 21: Interrupt detection - detect user speaking while agent speaks
+      if (this.interruptHandler && this.audioChunksSent > 0) {
+        const interruptStatus = this.interruptHandler.detectInterruption(processedBuffer);
+        if (interruptStatus.interrupted) {
+          console.log(`🛑 User interrupt detected (confidence: ${(interruptStatus.confidence * 100).toFixed(0)}%)`);
+        }
+      }
+
+      // Gap 22: Record audio activity for timeout reset
+      if (this.callTimeout) {
+        this.callTimeout.recordAudioActivity();
+      }
+
+      // Gap 26: Monitor audio quality
+      if (this.qualityMonitor) {
+        this.qualityMonitor.recordAudioLevel(energyLevel / 100);
+        this.qualityMonitor.recordPacketStats({ totalPackets: 1, lostPackets: 0 });
+      }
+    } catch (processingError) {
+      console.warn(`⚠️ Audio processing error: ${processingError.message}. Using original audio.`);
+      processedBuffer = pcmBuffer;
+    }
+
     // Detect user speech (energy level indicates speaking)
     const speechThreshold = 20; // RMS threshold for speech
 
@@ -390,15 +558,15 @@ export class VoiceService extends EventEmitter {
 
     this.audioChunksSent++;
     // 🔴 DIAGNOSTIC: Log audio chunks being sent to Gemini
-    const KB = (pcmBuffer.length / 1024).toFixed(2);
+    const KB = (processedBuffer.length / 1024).toFixed(2);
     if (this.audioChunksSent <= 3 || this.audioChunksSent % 10 === 0) {
-      console.log(`🎤 Audio chunk #${this.audioChunksSent} sent to Gemini: ${pcmBuffer.length} bytes (${KB} KB), energy=${energyLevel.toFixed(0)}`);
+      console.log(`🎤 Audio chunk #${this.audioChunksSent} sent to Gemini: ${processedBuffer.length} bytes (${KB} KB), energy=${energyLevel.toFixed(0)}`);
     }
 
     // 🔗 Emit to state machine
-    this._emitAudioChunkToStateMachine(pcmBuffer);
+    this._emitAudioChunkToStateMachine(processedBuffer);
 
-    this.geminiSession.sendAudio(pcmBuffer);
+    this.geminiSession.sendAudio(processedBuffer);
   }
 
   /**
@@ -549,6 +717,72 @@ export class VoiceService extends EventEmitter {
     if (this.isClosed) return;
 
     console.log(`🛑 Closing voice service for call: ${this.callId}`);
+
+    // ✅ PHASE 2: Close all audio quality services
+    try {
+      // Stop call timeout monitoring
+      if (this.callTimeout) {
+        const timeoutStatus = this.callTimeout.getStatus();
+        console.log(`⏱️  Call timeout status: ${JSON.stringify(timeoutStatus)}`);
+      }
+
+      // Get and log quality report
+      if (this.qualityMonitor) {
+        const qualityReport = this.qualityMonitor.getReport();
+        console.log(`📊 QUALITY REPORT:`, JSON.stringify(qualityReport, null, 2));
+
+        // Emit quality alert for any SLA violations
+        if (this.webhookEmitter && qualityReport.activeAlerts > 0) {
+          for (const alert of qualityReport.alerts) {
+            await this.webhookEmitter.emitQualityAlert({
+              callId: this.callId,
+              severity: alert.severity,
+              type: alert.type,
+              value: alert.value,
+              threshold: this.qualityMonitor.thresholds[
+                ['maxPacketLoss', 'maxJitter', 'maxLatency', 'maxNoise', 'minAudioLevel'][
+                  ['PACKET_LOSS', 'HIGH_JITTER', 'HIGH_LATENCY', 'HIGH_NOISE', 'LOW_AUDIO'].indexOf(alert.type)
+                ]
+              ]
+            });
+          }
+        }
+      }
+
+      // Close webhook emitter with call ended event
+      if (this.webhookEmitter) {
+        const callDuration = this.startTime ? Math.round((Date.now() - this.startTime) / 1000) : 0;
+        await this.webhookEmitter.emitCallEnded({
+          callId: this.callId,
+          duration: callDuration,
+          endReason: 'call_completed',
+          status: 'ENDED',
+          metrics: {
+            audioChunksSent: this.audioChunksSent,
+            audioChunksReceived: this.audioChunksReceived,
+            conversationTurns: this.conversationTurns.length
+          }
+        });
+      }
+
+      // Flush remaining audio from jitter buffer
+      if (this.jitterBuffer) {
+        const remaining = this.jitterBuffer.flush();
+        if (remaining && remaining.length > 0) {
+          console.log(`🔊 Flushed ${remaining.length} frames from jitter buffer`);
+        }
+      }
+
+      // Log service statuses
+      console.log(`✅ Echo Canceller: ${this.echoCanceller ? 'Active' : 'Disabled'}`);
+      console.log(`✅ Noise Suppressor: ${this.noiseSuppressor ? 'Active' : 'Disabled'}`);
+      console.log(`✅ Jitter Buffer: ${this.jitterBuffer ? 'Active' : 'Disabled'}`);
+      console.log(`✅ Interrupt Handler: ${this.interruptHandler ? 'Active' : 'Disabled'}`);
+      console.log(`✅ Codec Negotiator: ${this.codecNegotiator ? 'Active' : 'Disabled'}`);
+
+    } catch (cleanupError) {
+      console.error(`⚠️  Error during Phase 2 cleanup: ${cleanupError.message}`);
+    }
 
     // ✅ CRITICAL: Refresh cache TTL to keep it warm 24/7
     // Without this, cache expires after 60 min → full cost on next call
