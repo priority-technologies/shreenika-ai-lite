@@ -286,10 +286,29 @@ export class VoiceService extends EventEmitter {
         });
       }
 
-      console.log(`✅ Voice service ready for call: ${this.callId}`);
+      // Initialization complete - log full diagnostic
+      const initDurationMs = Date.now() - this.startTime;
+      console.log(`✅ VOICE SERVICE INITIALIZATION COMPLETE`);
+      console.log(`   ├─ Call ID: ${this.callId}`);
+      console.log(`   ├─ Agent: ${this.agent.name}`);
+      console.log(`   ├─ Gemini Ready: ${this.isReady}`);
+      console.log(`   ├─ Duration: ${initDurationMs}ms`);
+      console.log(`   ├─ Services Initialized:`);
+      console.log(`   │  ├─ Echo Canceller: ${this.echoCanceller ? '✅' : '❌'}`);
+      console.log(`   │  ├─ Noise Suppressor: ${this.noiseSuppressor ? '✅' : '❌'}`);
+      console.log(`   │  ├─ Jitter Buffer: ${this.jitterBuffer ? '✅' : '❌'}`);
+      console.log(`   │  ├─ Interrupt Handler: ${this.interruptHandler ? '✅' : '❌'}`);
+      console.log(`   │  ├─ Call Timeout: ${this.callTimeout ? '✅' : '❌'}`);
+      console.log(`   │  ├─ Webhook Emitter: ${this.webhookEmitter ? '✅' : '❌'}`);
+      console.log(`   │  └─ Quality Monitor: ${this.qualityMonitor ? '✅' : '❌'}`);
+      console.log(`   └─ Status: READY TO RECEIVE AUDIO`);
 
     } catch (error) {
-      console.error(`❌ Voice service initialization failed:`, error.message);
+      console.error(`❌ VOICE SERVICE INITIALIZATION FAILED`);
+      console.error(`   ├─ Call ID: ${this.callId}`);
+      console.error(`   ├─ Error: ${error.message}`);
+      console.error(`   ├─ This is a CRITICAL error - call cannot proceed`);
+      console.error(`   └─ Check: GOOGLE_API_KEY, model availability, network connectivity`);
       this.emit('error', error);
       throw error;
     }
@@ -475,8 +494,21 @@ export class VoiceService extends EventEmitter {
     if (!this.isReady || this.isClosed) {
       if (this._audioDropCount === undefined) this._audioDropCount = 0;
       this._audioDropCount++;
-      if (this._audioDropCount <= 3 || this._audioDropCount % 50 === 0) {
-        console.warn(`⚠️ VoiceService: Audio dropped - isReady=${this.isReady}, isClosed=${this.isClosed} (dropped ${this._audioDropCount} chunks)`);
+
+      // CRITICAL: Log first failure with detailed diagnostics
+      if (this._audioDropCount === 1) {
+        console.error(`❌ CRITICAL: VoiceService not ready for audio - isReady=${this.isReady}, isClosed=${this.isClosed}`);
+        console.error(`   This means Gemini Live setupComplete event was not received`);
+        console.error(`   Possible causes:`);
+        console.error(`   1. Gemini Live API connection failed (check GOOGLE_API_KEY)`);
+        console.error(`   2. Network connectivity issue between backend and Google API`);
+        console.error(`   3. API quota exceeded or model unavailable`);
+        console.error(`   4. WebSocket connection closed before setupComplete`);
+        console.error(`   Audio will be silently dropped for this call`);
+      }
+
+      if (this._audioDropCount <= 10 || this._audioDropCount % 100 === 0) {
+        console.warn(`⚠️ Audio dropped #${this._audioDropCount} (isReady=${this.isReady}, isClosed=${this.isClosed})`);
       }
       return;
     }

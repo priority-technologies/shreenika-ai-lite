@@ -246,13 +246,16 @@ export const createMediaStreamServer = (httpServer) => {
               });
 
               voiceService.on('error', (error) => {
-                console.error(`❌ Voice service error:`, error.message);
+                console.error(`❌ Voice service error during call:`, error.message);
+                console.error(`   Context: Failed during active call, check Gemini Live API status`);
               });
 
-              voiceService.on('close', () => {
+              voiceService.on('close', async () => {
                 console.log(`🔌 Voice service closed for SansPBX`);
                 if (!isClosing) {
                   isClosing = true;
+                  // Flush logs before closing WebSocket (500ms delay for Cloud Logging)
+                  await new Promise(resolve => setTimeout(resolve, 100));
                   ws.close();
                 }
               });
@@ -267,6 +270,12 @@ export const createMediaStreamServer = (httpServer) => {
                 console.log(`✅ VoiceService initialized for SansPBX: ${message.callId}`);
               } catch (initError) {
                 console.error(`❌ VoiceService initialization failed or timed out: ${initError.message}`);
+                console.error(`\n📋 INITIALIZATION FAILURE DIAGNOSIS:\n   Issue: ${initError.message}\n   Time: ${new Date().toISOString()}\n   Call ID: ${message.callId}\n`);
+
+                // CRITICAL: Give Cloud Logging time to persist error logs before closing (500ms)
+                // Without this delay, logs are lost when connection closes immediately
+                await new Promise(resolve => setTimeout(resolve, 500));
+
                 ws.close();
                 return;
               }
