@@ -2319,23 +2319,26 @@ wssTwilio.on('connection', async (twilioWs, req) => {
             welcomeMsg = personalised !== welcomeMsg ? personalised : `${nameGreeting}, ${welcomeMsg}`;
           }
 
+          // Always open audio gate immediately — caller's "Hello?" must reach Gemini
+          // before AI speaks, regardless of callStartBehavior.
+          welcomeSent = true;
+
           if (welcomeMsg && callStartBehavior !== 'waitForHuman') {
-            setTimeout(() => {
-              if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({
-                  clientContent: {
-                    turns: [{ role: 'user', parts: [{ text: `SYSTEM: A new call has just connected. Greet the caller by speaking this opening message exactly: "${welcomeMsg}". After speaking it, wait for the caller to respond. Do NOT call end_call now.` }] }],
-                    turnComplete: true
-                  }
-                }));
-                logger.info('[TWILIO-STREAM] Welcome message dispatched');
-                welcomeSent = true; // open audio gate — now forward caller audio to Gemini
-              }
-            }, 500);
-          } else {
-            // waitForHuman or no welcome — open gate immediately
-            welcomeSent = true;
+            // Outbound call — instruct Gemini to wait for caller to speak first,
+            // THEN respond with the greeting. This is correct cold-calling etiquette:
+            // phone is answered → caller says "Hello?" → AI greets them.
+            // Do NOT send the greeting immediately — let the caller speak first.
+            if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+              geminiWs.send(JSON.stringify({
+                clientContent: {
+                  turns: [{ role: 'user', parts: [{ text: `SYSTEM: An outbound call just connected. The recipient has answered. Do NOT speak yet — wait silently for the caller to say something first (they will say "Hello?" or "Haan?" or similar). Once they speak, respond immediately with this exact greeting: "${welcomeMsg}". After the greeting, wait for them to respond. Do NOT call end_call now.` }] }],
+                  turnComplete: true
+                }
+              }));
+              logger.info('[TWILIO-STREAM] Wait-for-caller instruction sent. Greeting ready: "' + welcomeMsg.substring(0, 60) + '"');
+            }
           }
+          // waitForHuman mode: gate already open, no instruction needed — Gemini waits naturally
 
           // Graceful conclusion at exactly 4:00 minutes (Vertex AI hard-cuts at 5:00)
           // Inject conclusion instruction with 60 seconds of runway before infrastructure cut.
@@ -2384,18 +2387,20 @@ wssTwilio.on('connection', async (twilioWs, req) => {
               const summary    = (fc.args && fc.args.summary)   || '';
               logger.info('[TWILIO-STREAM] [END_CALL] sentiment:', sentiment, '| duration:', durationSec + 's');
 
-              if ((sentiment === 'positive' || sentiment === 'neutral') && summary && geminiWs.readyState === WebSocket.OPEN) {
+              // Acknowledge end_call without telling Gemini to speak again.
+              // Gemini already spoke the closing before calling end_call — if we say
+              // "speak summary now" it repeats the last sentence. Just acknowledge.
+              if (geminiWs.readyState === WebSocket.OPEN) {
                 geminiWs.send(JSON.stringify({
                   toolResponse: {
-                    functionResponses: [{ id: fc.id, name: 'end_call', response: { output: 'Speak conclusion summary now, then say goodbye.' } }]
+                    functionResponses: [{ id: fc.id, name: 'end_call', response: { output: 'Acknowledged. Call ending.' } }]
                   }
                 }));
               }
 
-              // Delay before closing: 10s for positive/neutral with summary (Gemini needs time to speak
-              // the full closing), 5s for negative/no-summary calls (shorter goodbye).
-              // Pipeline: Gemini generates → backend converts → Twilio network → caller phone ≈ 1-2s
-              const hangupDelay = (sentiment === 'positive' || sentiment === 'neutral') && summary ? 10000 : 5000;
+              // 10s for positive/neutral (Gemini may still be speaking last audio chunk),
+              // 5s for negative calls (shorter close).
+              const hangupDelay = (sentiment === 'positive' || sentiment === 'neutral') ? 10000 : 5000;
               setTimeout(async () => {
                 cleanup();
                 await saveCallToDb(sentiment, summary, durationSec);

@@ -457,21 +457,19 @@ async function handleSansPBXStream(sansPbxWs, req) {
           resetSilenceTimer(silenceThresholdMs);
 
           const welcomeMsg = agent.welcomeMessage;
+          // Always open audio gate immediately — caller's "Hello?" must reach Gemini first
+          welcomeSent = true;
+
           if (welcomeMsg && agent.callStartBehavior !== 'waitForHuman') {
-            setTimeout(() => {
-              if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
-                geminiWs.send(JSON.stringify({
-                  clientContent: {
-                    turns: [{ role: 'user', parts: [{ text: `SYSTEM: A new call has just connected. Greet the caller by speaking this opening message exactly: "${welcomeMsg}". After speaking it, wait for the caller to respond.` }] }],
-                    turnComplete: true,
-                  },
-                }));
-                welcomeSent = true;
-                logger.info('[SANSPBX-STREAM] Welcome dispatched');
-              }
-            }, 500);
-          } else {
-            welcomeSent = true;
+            if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+              geminiWs.send(JSON.stringify({
+                clientContent: {
+                  turns: [{ role: 'user', parts: [{ text: `SYSTEM: An outbound call just connected. The recipient has answered. Do NOT speak yet — wait silently for the caller to say something first (they will say "Hello?" or "Haan?" or similar). Once they speak, respond immediately with this exact greeting: "${welcomeMsg}". After the greeting, wait for them to respond.` }] }],
+                  turnComplete: true,
+                },
+              }));
+              logger.info('[SANSPBX-STREAM] Wait-for-caller instruction sent');
+            }
           }
 
           // Graceful conclusion at exactly 4:00 minutes (Vertex AI hard-cuts at 5:00)
@@ -506,12 +504,11 @@ async function handleSansPBXStream(sansPbxWs, req) {
               const sentiment = fc.args?.sentiment || 'neutral';
               const summary   = fc.args?.summary   || '';
 
-              if ((sentiment === 'positive' || sentiment === 'neutral') && summary) {
-                geminiWs.send(JSON.stringify({ toolResponse: { functionResponses: [{ id: fc.id, name: 'end_call', response: { output: 'Please speak the conclusion summary now, then say goodbye.' } }] } }));
-              }
+              // Acknowledge without telling Gemini to speak again — it already spoke
+              // the closing before calling end_call. Saying "speak summary now" causes repeat.
+              geminiWs.send(JSON.stringify({ toolResponse: { functionResponses: [{ id: fc.id, name: 'end_call', response: { output: 'Acknowledged. Call ending.' } }] } }));
 
-              // 10s for positive/neutral with summary (Gemini needs time to speak full closing), 5s otherwise
-              const hangupDelay = (sentiment === 'positive' || sentiment === 'neutral') && summary ? 10000 : 5000;
+              const hangupDelay = (sentiment === 'positive' || sentiment === 'neutral') ? 10000 : 5000;
               setTimeout(async () => {
                 await saveCallToDb(sentiment, summary, callDurationSec);
                 cleanup();
