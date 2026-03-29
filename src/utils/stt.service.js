@@ -44,6 +44,7 @@ class SttService extends EventEmitter {
     this._stream       = null;
     this._restartTimer = null;
     this._pendingChunks = []; // buffer chunks received before stream is ready
+    this._errorCount   = 0;   // circuit breaker — stop after 5 consecutive auth errors
   }
 
   // ── Lazy-init the Speech client ──────────────────────────────────────────────
@@ -51,9 +52,12 @@ class SttService extends EventEmitter {
     if (this._client) return this._client;
     try {
       const { SpeechClient } = require('@google-cloud/speech');
+      // Use Application Default Credentials (ADC) — Cloud Run provides these automatically
+      // via the instance metadata server. Do NOT pass keyFilename here — the Vertex AI
+      // service account (gen-lang-client SA) does not have Speech API IAM role, causing
+      // GoogleToken._requestToken failures in a tight loop.
       this._client = new SpeechClient({
         projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'gen-lang-client-0348687456',
-        keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
       });
     } catch (e) {
       logger.warn('[STT] SpeechClient init failed — STT side-channel disabled:', e.message);
@@ -105,8 +109,18 @@ class SttService extends EventEmitter {
         // Code 11 = stream expired (5 min limit) → restart silently
         if (err.code === 11 || err.message?.includes('exceeded maximum allowed stream duration')) {
           logger.info('[STT] Stream limit reached — restarting automatically');
+          this._errorCount = 0; // reset on expected expiry
         } else {
-          logger.warn('[STT] Stream error (non-critical):', err.message);
+          this._errorCount++;
+          logger.warn(`[STT] Stream error #${this._errorCount} (code ${err.code}): ${err.message}`);
+          // Circuit breaker — if same error fires 5 times in a row, it's a permanent failure
+          // (auth error, quota, etc.) — stop retrying to prevent log spam
+          if (this._errorCount >= 5) {
+            logger.warn('[STT] Circuit breaker triggered — disabling STT for this call after 5 consecutive errors');
+            this._destroyed = true;
+            this._stream = null;
+            return;
+          }
         }
         this._stream = null;
         if (!this._destroyed) {

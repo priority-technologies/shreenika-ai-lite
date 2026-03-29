@@ -93,7 +93,9 @@ const AgentSchema = new mongoose.Schema(
     interruptionSensitivity: { type: Number, default: 0.5 },
     responsiveness:          { type: Number, default: 0.5 },
     emotionLevel:            { type: Number, default: 0.5 },
-    backgroundNoise:         { type: String, default: 'Office' },
+    // backgroundNoise: disabled — Gemini Live API has no background noise parameter.
+    // UI dropdown hidden. Will re-enable when audio mixing is implemented.
+    // backgroundNoise:         { type: String, default: 'Office' },
 
     // Context Caching Layer 2 — Vertex AI cached system instruction
     // cachedContentName: full resource name from Vertex AI Cache API
