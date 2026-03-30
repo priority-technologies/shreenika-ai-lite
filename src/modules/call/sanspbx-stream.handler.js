@@ -176,7 +176,7 @@ async function handleSansPBXStream(sansPbxWs, req) {
       if (msg.event === 'answer') {
         streamId  = msg.streamId  || msg.stream_id  || null;
         channelId = msg.channelId || msg.channel_id || null;
-        callId    = msg.callId    || msg.call_id    || null;
+        callId    = msg.callId    || msg.call_id    || msg.callid || null;
         logger.info('[SANSPBX-STREAM] Answer received — streamId:', streamId, 'channelId:', channelId, 'callId:', callId);
 
         // Resolve agentId from streamMeta (set by call.controller.js when call was initiated)

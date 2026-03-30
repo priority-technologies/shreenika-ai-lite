@@ -1971,8 +1971,8 @@ wssTwilio.on('connection', async (twilioWs, req) => {
             clearTimeout(timeout);
             twilioWs.removeListener('message', onStart);
 
-            streamSid = m.streamSid || (m.start && m.start.streamSid);
-            callSid   = (m.start && m.start.callSid) || null;
+            streamSid = m.streamSid;
+            callSid   = m.callSid || null;
             console.log('[TWILIO-STREAM] start received — callSid:', callSid, '| streamSid:', streamSid);
 
             const meta = streamMeta.get(callSid);
