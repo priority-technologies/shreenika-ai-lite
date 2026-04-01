@@ -257,6 +257,19 @@ async function handleSansPBXStream(sansPbxWs, req) {
         const pcm8  = Buffer.from(pcm8Base64, 'base64');
         const pcm16 = upsample8to16(pcm8);
 
+        // ── CRITICAL FIX: Send system instruction BEFORE audio (matches Twilio behavior) ──
+        // Without this, Gemini's VAD doesn't recognize the audio stream and closes connection after ~25s
+        if (!humanHasSpoken) {
+          humanHasSpoken = true;
+          logger.info('[SANSPBX-STREAM] First human audio received — sending system instruction to Gemini');
+          geminiWs.send(JSON.stringify({
+            clientContent: {
+              turns: [{ role: 'user', parts: [{ text: 'SYSTEM: The caller has started speaking. You may now respond naturally.' }] }],
+              turnComplete: false
+            }
+          }));
+        }
+
         geminiWs.send(JSON.stringify({
           realtimeInput: {
             mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: pcm16.toString('base64') }]
