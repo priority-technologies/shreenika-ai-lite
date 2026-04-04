@@ -92,6 +92,9 @@ const callSchema = new mongoose.Schema(
       fileSize: Number,
       format:   { type: String, default: 'wav' },
     },
+    // ── MISSING FIX #3: Separate caller and Gemini recording paths (bidirectional) ──
+    recordingPath: { type: String },        // Caller audio (8kHz PCM)
+    geminiRecordingPath: { type: String }, // Gemini audio (16kHz PCM)
 
     // ── Transcript ────────────────────────────────────────────────────────
     transcript: { type: String },

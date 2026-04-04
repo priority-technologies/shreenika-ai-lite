@@ -1,5 +1,5 @@
 'use strict';
-const stripe        = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 const { Subscription, PLANS } = require('./subscription.model');
 const Invoice       = require('./invoice.model');
 const MinuteLedger  = require('./minute-ledger.model');

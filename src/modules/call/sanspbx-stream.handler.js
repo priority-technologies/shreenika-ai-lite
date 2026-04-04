@@ -29,6 +29,66 @@ const ContextCacheService = require('../../utils/context-cache.service'); // Con
 
 // ── Audio conversion helpers ──────────────────────────────────────────────────
 
+// ── MISSING FIX #3: Save SansPBX call recording to Google Cloud Storage ──
+// Combines caller audio (8kHz) + Gemini audio (24kHz) into a single recording
+async function saveSansPBXCallRecordingToGCS(callerAudChunks, geminiAudChunks, { userId, callId }) {
+  try {
+    if ((!callerAudChunks || callerAudChunks.length === 0) && (!geminiAudChunks || geminiAudChunks.length === 0)) {
+      logger.warn('[GCS] [RECORDING] No audio to save for callId:', callId);
+      return null;
+    }
+
+    // Combine caller audio (PCM16LE 8kHz)
+    const callerAudio = callerAudChunks && callerAudChunks.length > 0 ? Buffer.concat(callerAudChunks) : Buffer.alloc(0);
+
+    // Combine Gemini audio (PCM 24kHz) — downsample to 16kHz for compatibility
+    let geminiAudio = Buffer.alloc(0);
+    if (geminiAudChunks && geminiAudChunks.length > 0) {
+      const combined24 = Buffer.concat(geminiAudChunks);
+      geminiAudio = downsample24to16(combined24);
+    }
+
+    // For now, save caller audio (8kHz) as primary recording; Gemini audio available separately
+    const { Storage } = require('@google-cloud/storage');
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'gen-lang-client-0348687456';
+    const bucketName = process.env.AUDIO_CACHE_BUCKET || 'shreenika-ai-audio-cache';
+
+    const gcsClient = new Storage({ projectId });
+    const bucket = gcsClient.bucket(bucketName);
+
+    // Save caller audio
+    let callerGcsPath = null;
+    if (callerAudio.length > 0) {
+      const callerFileName = `calls/${userId}/${callId}_caller.pcm`;
+      const callerFile = bucket.file(callerFileName);
+      await callerFile.save(callerAudio, { resumable: false });
+      callerGcsPath = `gs://${bucketName}/${callerFileName}`;
+      logger.info('[GCS] [RECORDING] ✅ Saved caller audio:', callerGcsPath, '| size:', callerAudio.length, 'bytes');
+    }
+
+    // Save Gemini audio separately
+    let geminiGcsPath = null;
+    if (geminiAudio.length > 0) {
+      const geminiFileName = `calls/${userId}/${callId}_gemini.pcm`;
+      const geminiFile = bucket.file(geminiFileName);
+      await geminiFile.save(geminiAudio, { resumable: false });
+      geminiGcsPath = `gs://${bucketName}/${geminiFileName}`;
+      logger.info('[GCS] [RECORDING] ✅ Saved Gemini audio:', geminiGcsPath, '| size:', geminiAudio.length, 'bytes');
+    }
+
+    return {
+      callerRecordingPath: callerGcsPath,
+      geminiRecordingPath: geminiGcsPath,
+      callerAudioSizeBytes: callerAudio.length,
+      geminiAudioSizeBytes: geminiAudio.length,
+      uploadedAt: new Date(),
+    };
+  } catch (error) {
+    logger.error('[GCS] [RECORDING] Error saving call recording:', error.message);
+    return null;
+  }
+}
+
 // PCM16LE 8kHz → PCM16LE 16kHz (duplicate each sample)
 function upsample8to16(buf) {
   const samples = buf.length / 2;
@@ -51,6 +111,22 @@ function downsample24to8(buf) {
     const s1 = buf.readInt16LE(i * 6 + 2);
     const s2 = buf.readInt16LE(i * 6 + 4);
     out.writeInt16LE(Math.round((s0 + s1 + s2) / 3), i * 2);
+  }
+  return out;
+}
+
+// ── MISSING FIX #1: Downsample PCM 24kHz → 16kHz (for Google STT) ──
+// Gemini sends 24kHz, Google STT requires 16kHz
+function downsample24to16(buf) {
+  const n24 = buf.length / 2;
+  const n16 = Math.floor(n24 * 16 / 24);
+  const out = Buffer.alloc(n16 * 2);
+  for (let i = 0; i < n16; i++) {
+    const srcIdx = Math.floor(i * 24 / 16);
+    if (srcIdx * 2 < buf.length) {
+      const sample = buf.readInt16LE(srcIdx * 2);
+      out.writeInt16LE(sample, i * 2);
+    }
   }
   return out;
 }
@@ -85,6 +161,10 @@ async function handleSansPBXStream(sansPbxWs, req) {
   let geminiSecondsUsed  = 0;
   let turnStartTime      = 0;
   let sttService         = null; // initialized after agentLanguage is known
+
+  // ── MISSING FIX #3: Call Recording state ──
+  let callerAudioChunks  = [];  // Collect all caller audio (8kHz PCM16LE)
+  let geminiAudioChunks  = [];  // Collect all Gemini audio (24kHz PCM)
 
   function cleanup() {
     if (silenceTimer)  { clearTimeout(silenceTimer);  silenceTimer  = null; }
@@ -127,9 +207,19 @@ async function handleSansPBXStream(sansPbxWs, req) {
   async function saveCallToDb(sentiment, summary, durationSec) {
     if (!liveCallDocId) return;
     try {
+      // ── MISSING FIX #3: Save call recording to GCS ──
+      let recordingMeta = null;
+      if (cacheUserId && callId) {
+        recordingMeta = await saveSansPBXCallRecordingToGCS(callerAudioChunks, geminiAudioChunks, {
+          userId: cacheUserId,
+          callId: callId,
+        });
+      }
+
       const Call = require('../call/call.model');
       const transcriptText = transcriptParts.map(p => `${p.speaker}: ${p.text}`).join('\n');
-      await Call.findByIdAndUpdate(liveCallDocId, {
+
+      const updateData = {
         status:          'COMPLETED',
         endedAt:         new Date(),
         durationSeconds: durationSec,
@@ -137,7 +227,15 @@ async function handleSansPBXStream(sansPbxWs, req) {
         transcriptStatus:'completed',
         callSentiment:   sentiment || 'neutral',
         callSummary:     summary   || '',
-      });
+      };
+
+      // ── MISSING FIX #3: Store recording paths in Call database ──
+      if (recordingMeta) {
+        updateData.recordingPath = recordingMeta.callerRecordingPath;
+        updateData.geminiRecordingPath = recordingMeta.geminiRecordingPath;
+      }
+
+      await Call.findByIdAndUpdate(liveCallDocId, updateData);
 
       if (!billingDeducted) {
         billingDeducted = true;
@@ -253,8 +351,10 @@ async function handleSansPBXStream(sansPbxWs, req) {
         const pcm8Base64 = msg.payload;
         if (!pcm8Base64) return;
 
-        // PCM16LE 8kHz → 16kHz → Gemini
-        const pcm8  = Buffer.from(pcm8Base64, 'base64');
+        // ── MISSING FIX #3: Collect caller audio for recording ──
+        const pcm8 = Buffer.from(pcm8Base64, 'base64');
+        callerAudioChunks.push(pcm8);
+
         const pcm16 = upsample8to16(pcm8);
 
         // ── CRITICAL FIX: Send system instruction BEFORE audio (matches Twilio behavior) ──
@@ -552,7 +652,20 @@ async function handleSansPBXStream(sansPbxWs, req) {
           for (const part of msg.serverContent.modelTurn.parts) {
             if (part.inlineData?.data) {
               sendAudioToCaller(part.inlineData.data);
-              pendingAudioChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+              const pcm24 = Buffer.from(part.inlineData.data, 'base64');
+              pendingAudioChunks.push(pcm24);
+              geminiAudioChunks.push(pcm24);  // ── MISSING FIX #3: Collect for recording ──
+
+              // ── MISSING FIX #2: Feed Gemini audio to Google STT (24kHz → 16kHz) ──
+              try {
+                const pcm16 = downsample24to16(pcm24);
+                if (sttService && pcm16.length > 0) {
+                  sttService.write(pcm16);
+                  logger.debug('[SANSPBX-STREAM] [STT] Fed Gemini audio to STT for bidirectional transcription');
+                }
+              } catch (err) {
+                logger.error('[SANSPBX-STREAM] [STT] Error feeding Gemini audio to STT:', err.message);
+              }
             }
             // Capture Gemini text output as Agent transcript (sent alongside audio in v1beta1)
             if (part.text && part.text.trim()) {

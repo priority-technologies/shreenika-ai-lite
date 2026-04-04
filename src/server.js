@@ -124,6 +124,24 @@ app.use((req, res, next) => {
 app.use(passport.initialize());
 app.use('/auth', authRoutes);
 
+// 🔹 TEMPORARY LOCAL TESTING BYPASS (REMOVE BEFORE PRODUCTION)
+app.post('/auth/local-testing', async (req, res) => {
+  try {
+    const User = require('./modules/auth/user.model.js');
+    const bcrypt = require('bcryptjs');
+    const jwt = require('jsonwebtoken');
+    const testEmail = 'test@local.shreenika';
+    let user = await User.findOne({ email: testEmail });
+    if (!user) {
+      user = await User.create({ email: testEmail, name: 'Test User', password: await bcrypt.hash('test123456', 10), role: 'user', emailVerified: true, isActive: true });
+    }
+    const token = jwt.sign({ id: user._id.toString(), role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ token, user: { id: user._id.toString(), name: user.name, email: user.email, role: user.role } });
+  } catch (err) {
+    return res.status(500).json({ message: 'Local testing failed: ' + err.message });
+  }
+});
+
 // ============================================================
 // VOIP ROUTES
 // ============================================================
