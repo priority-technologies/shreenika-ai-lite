@@ -190,6 +190,70 @@ class BillingService {
     };
   }
 
+  // ── Get invoice history ───────────────────────────────────────────────────
+  static async getInvoices(userId) {
+    const invoices = await Invoice.find({ userId }).sort({ createdAt: -1 }).limit(24).lean();
+    return invoices;
+  }
+
+  // ── Create Stripe checkout for minute recharge ────────────────────────────
+  static async createRechargeCheckoutSession(userId, email, name, { minutes, frontendUrl }) {
+    const sub = await BillingService.getOrCreateSubscription(userId);
+    const plan = PLANS[sub.plan];
+
+    if (!plan.rechargeAllowed) {
+      throw new Error('Minute recharge not available on Starter plan. Please upgrade to Pro or Enterprise.');
+    }
+
+    const amountINR   = Math.ceil(minutes * plan.rechargeRatePerMin);
+    const amountPaise = amountINR * 100;
+    const customerId  = await BillingService.ensureStripeCustomer(userId, email, name);
+
+    const session = await stripe.checkout.sessions.create({
+      customer:             customerId,
+      mode:                 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency:     'inr',
+          product_data: { name: `${minutes} Extra Minutes` },
+          unit_amount:  amountPaise,
+        },
+        quantity: 1,
+      }],
+      success_url: `${frontendUrl}/settings?tab=Subscription&recharge=success`,
+      cancel_url:  `${frontendUrl}/settings?tab=Subscription`,
+      metadata: { userId: userId.toString(), type: 'minute_recharge', minutes: minutes.toString(), plan: sub.plan },
+      payment_intent_data: { metadata: { userId: userId.toString(), type: 'minute_recharge', minutes: minutes.toString(), plan: sub.plan } },
+    });
+
+    return { sessionId: session.id, url: session.url, amountINR, minutes };
+  }
+
+  // ── Create Stripe checkout for document addon ─────────────────────────────
+  static async createAddonCheckoutSession(userId, email, name, { frontendUrl }) {
+    const customerId = await BillingService.ensureStripeCustomer(userId, email, name);
+
+    const session = await stripe.checkout.sessions.create({
+      customer:             customerId,
+      mode:                 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price_data: {
+          currency:     'inr',
+          product_data: { name: '10 Extra Document Slots (per agent)' },
+          unit_amount:  83000, // ₹830 in paise
+        },
+        quantity: 1,
+      }],
+      success_url: `${frontendUrl}/settings?tab=Subscription&addon=success`,
+      cancel_url:  `${frontendUrl}/settings?tab=Subscription`,
+      metadata: { userId: userId.toString(), type: 'addon_docs', docsAdded: '10' },
+    });
+
+    return { sessionId: session.id, url: session.url };
+  }
+
   // ── Create Stripe customer ────────────────────────────────────────────────
   static async ensureStripeCustomer(userId, email, name) {
     const sub = await BillingService.getOrCreateSubscription(userId);
@@ -355,6 +419,43 @@ class BillingService {
               $inc: { subtotal: amountINR, total: amountINR },
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+        }
+        break;
+      }
+
+      // ── Checkout session completed (one-time: recharge or addon) ──
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const userId  = session.metadata?.userId;
+        const type    = session.metadata?.type;
+        if (!userId || session.payment_status !== 'paid') break;
+
+        if (type === 'minute_recharge') {
+          const minutes = parseInt(session.metadata?.minutes || '0', 10);
+          if (minutes > 0) {
+            await Subscription.findOneAndUpdate(
+              { userId },
+              { $inc: { minutesBalance: minutes, minutesRecharged: minutes } }
+            );
+            const sub  = await Subscription.findOne({ userId });
+            const plan = PLANS[sub?.plan] || PLANS.Pro;
+            const amountINR = Math.ceil(minutes * plan.rechargeRatePerMin);
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            await Invoice.findOneAndUpdate(
+              { userId, month: currentMonth, status: 'draft' },
+              {
+                $push: { lineItems: { description: `${minutes} minute recharge`, quantity: minutes, unitPrice: plan.rechargeRatePerMin, total: amountINR, type: 'recharge' } },
+                $inc: { subtotal: amountINR, total: amountINR },
+              },
+              { upsert: true, new: true, setDefaultsOnInsert: true }
+            );
+          }
+        } else if (type === 'addon_docs') {
+          const docsAdded = parseInt(session.metadata?.docsAdded || '10', 10);
+          await Subscription.findOneAndUpdate(
+            { userId },
+            { $inc: { 'effectiveLimits.docs': docsAdded, 'addOns.extraDocs': docsAdded } }
           );
         }
         break;

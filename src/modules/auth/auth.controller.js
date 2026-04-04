@@ -348,6 +348,60 @@ const updateProfile = async (req, res) => {
   }
 };
 
+/* =========================
+   🔹 TEMPORARY LOCAL TESTING BYPASS (REMOVE BEFORE PRODUCTION)
+   This endpoint creates or retrieves a test user for local development only
+========================= */
+const localTesting = async (req, res) => {
+  try {
+    // Only allow in development/localhost
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ message: 'Local testing bypass not available in production' });
+    }
+
+    const testEmail = 'test@local.shreenika';
+    let user = await User.findOne({ email: testEmail });
+
+    // Create test user if doesn't exist
+    if (!user) {
+      user = await User.create({
+        email: testEmail,
+        name: 'Test User',
+        password: await bcrypt.hash('test123456', 10),
+        role: 'user',
+        emailVerified: true,
+        isActive: true,
+        hasOnboarded: false
+      });
+      console.log(`✅ [LOCAL-TESTING] Created test user: ${testEmail}`);
+    } else {
+      console.log(`✅ [LOCAL-TESTING] Using existing test user: ${testEmail}`);
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id.toString(), role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    return res.json({
+      message: 'Local testing bypass - Test user authenticated',
+      token,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        emailVerified: true
+      }
+    });
+  } catch (err) {
+    console.error('LOCAL TESTING ERROR:', err);
+    return res.status(500).json({ message: 'Local testing failed' });
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -358,4 +412,5 @@ module.exports = {
   markOnboarded,
   promoteToAdmin,
   updateProfile,
+  localTesting,
 };

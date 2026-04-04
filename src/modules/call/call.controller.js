@@ -274,4 +274,41 @@ const getCallStats = async (req, res) => {
   }
 };
 
-module.exports = { listCalls, getCall, updateCall, archiveCall, redialCall, getCallStats };
+// ─────────────────────────────────────────────────────────────────────────────
+// ── MISSING FIX #4: GET /api/calls/:id/recording
+// Retrieve call recording metadata (GCS paths)
+// ─────────────────────────────────────────────────────────────────────────────
+const getCallRecording = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id || req.user?._id;
+
+    const call = await Call.findById(id).select('recordingPath geminiRecordingPath durationSeconds userId').lean();
+    if (!call) {
+      return res.status(404).json({ success: false, error: 'Call not found' });
+    }
+
+    // Verify ownership
+    if (call.userId?.toString() !== userId?.toString()) {
+      return res.status(403).json({ success: false, error: 'Unauthorized' });
+    }
+
+    if (!call.recordingPath && !call.geminiRecordingPath) {
+      return res.status(404).json({ success: false, error: 'No recording available for this call' });
+    }
+
+    res.json({
+      success: true,
+      recording: {
+        callerRecordingPath: call.recordingPath,
+        geminiRecordingPath: call.geminiRecordingPath,
+        durationSeconds: call.durationSeconds,
+      },
+    });
+  } catch (err) {
+    console.error('[CALL] getCallRecording error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+module.exports = { listCalls, getCall, updateCall, archiveCall, redialCall, getCallStats, getCallRecording };

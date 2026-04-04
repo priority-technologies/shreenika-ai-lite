@@ -132,6 +132,92 @@ async function getTwilioContext(agentId, userId) {
   return { error: 'No Twilio credentials found — add them via VOIP Integration or set TWILIO_ACCOUNT_SID/AUTH_TOKEN/FROM_NUMBER in .env' };
 }
 
+// ── Get Tata Tele credentials for an agent ────────────────────────────────────
+async function getTataTeleContext(agentId, userId) {
+  const numDoc = await VoipNumber.findOne({ assignedAgentId: agentId, status: 'active' });
+  if (!numDoc) return { error: 'No active DID assigned to this agent' };
+
+  const provDoc = await VoipProvider.findOne({
+    _id: numDoc.providerId, userId, provider: 'TataTele', isActive: true,
+  });
+  if (!provDoc) return { error: 'No active TataTele provider found for agent' };
+
+  const creds = provDoc.getDecryptedCredentials();
+  return {
+    creds,
+    did:        numDoc.phoneNumber,
+    providerId: provDoc._id,
+    numberId:   numDoc._id,
+  };
+}
+
+// ── Fire a single Tata Tele outbound call via Click-to-Call API ───────────────
+async function fireTataTeleCall(campaign, lead, callDocId) {
+  try {
+    const agentId = campaign.agentId.toString();
+    const userId  = campaign.userId.toString();
+    const ctx     = await getTataTeleContext(agentId, userId);
+    if (ctx.error) return { error: ctx.error };
+
+    const { creds, did, providerId, numberId } = ctx;
+    const { apiKey, endpointUrl } = creds;
+
+    if (!apiKey)       return { error: 'TataTele apiKey not configured' };
+    if (!endpointUrl)  return { error: 'TataTele Click-to-Call endpoint URL not configured' };
+
+    const baseUrl = process.env.PUBLIC_BASE_URL || '';
+    if (!baseUrl) return { error: 'PUBLIC_BASE_URL not configured' };
+
+    const wssUrl  = baseUrl.replace(/^https?:\/\//, 'wss://');
+    const campId  = campaign._id.toString();
+
+    const nodeFetch = require('node-fetch');
+    const fetchFn   = nodeFetch.default || nodeFetch;
+
+    const dialRes = await fetchFn(endpointUrl, {
+      method:  'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        destination:    lead.phone,
+        caller_id:      did,
+        async:          1,
+        custom_param1:  callDocId,
+        custom_param2:  agentId,
+        custom_param3:  campId,
+      }),
+    });
+
+    const dialData = await dialRes.json();
+    // Smartflo returns call_id or callSid; with async=1 it may only return acknowledgment
+    const tataTeleCallId = dialData.call_id || dialData.callSid || dialData.callid || dialData.id || callDocId;
+
+    console.log(`[WORKER] TataTele call fired: ${did} → ${lead.phone} | callId=${tataTeleCallId}`);
+
+    // Store in streamMeta so the WSS handler can resolve agentId when Smartflo connects
+    const streamMeta = require('../../shared/stream-meta');
+    streamMeta.set(tataTeleCallId, { agentId, campaignId: campId });
+
+    // Update Call doc with providerCallId and voipProvider
+    const Call = require('../call/call.model');
+    await Call.findByIdAndUpdate(callDocId, {
+      providerCallId: tataTeleCallId,
+      voipProvider:   'TataTele',
+      voipProviderId: providerId,
+      voipNumberId:   numberId,
+      fromNumber:     did,
+      status:         'DIALING',
+    });
+
+    return { callSid: tataTeleCallId, providerId, numberId, fromNumber: did };
+  } catch (err) {
+    console.error('[WORKER] fireTataTeleCall error:', err.message);
+    return { error: err.message };
+  }
+}
+
 // ── Get SansPBX credentials for an agent ─────────────────────────────────────
 async function getSansPBXContext(agentId, userId) {
   const numDoc = await VoipNumber.findOne({ assignedAgentId: agentId, status: 'active' });
@@ -332,13 +418,23 @@ async function fillSlots(campaignId) {
       campaignDirty = true;
     }
 
-    // ── Auto-detect provider: SansPBX or Twilio ──────────────────────────
-    const sansPbxCtx = await getSansPBXContext(campaign.agentId.toString(), campaign.userId.toString());
-    const useSansPBX = !sansPbxCtx.error;
+    // ── Auto-detect provider: TataTele → SansPBX → Twilio ───────────────
+    const tataTeleCtx = await getTataTeleContext(campaign.agentId.toString(), campaign.userId.toString());
+    const useTataTele = !tataTeleCtx.error;
 
-    const result = useSansPBX
-      ? await fireSansPBXCall(campaign, lead, callDoc._id.toString())
-      : await fireCall(campaign, lead);
+    let result;
+    let detectedProvider = 'Twilio';
+    if (useTataTele) {
+      result = await fireTataTeleCall(campaign, lead, callDoc._id.toString());
+      detectedProvider = 'TataTele';
+    } else {
+      const sansPbxCtx = await getSansPBXContext(campaign.agentId.toString(), campaign.userId.toString());
+      const useSansPBX = !sansPbxCtx.error;
+      result = useSansPBX
+        ? await fireSansPBXCall(campaign, lead, callDoc._id.toString())
+        : await fireCall(campaign, lead);
+      detectedProvider = useSansPBX ? 'SansPBX' : 'Twilio';
+    }
 
     if (result.error) {
       console.error(`[WORKER] Call initiation failed (slot ${slotId}):`, result.error);
@@ -369,7 +465,7 @@ async function fillSlots(campaignId) {
     await Call.findByIdAndUpdate(callDoc._id, {
       twilioCallSid:  result.callSid,
       providerCallId: result.callSid,
-      voipProvider:   useSansPBX ? 'SansPBX' : 'Twilio',
+      voipProvider:   detectedProvider,
       voipProviderId: result.providerId,
       voipNumberId:   result.numberId,
       fromNumber:     result.fromNumber,

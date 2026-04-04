@@ -42,6 +42,7 @@ class ContactService {
       leadScore:  data.leadScore  || 0,
       tags:       data.tags       || [],
       notes:      data.notes      || '',
+      agentId:    data.agentId    || null,
     });
 
     return ContactService._toFlat(doc);

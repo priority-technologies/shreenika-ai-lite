@@ -127,6 +127,23 @@ const addVoipProvider = async (req, res) => {
       }
     }
 
+    // ── TataTele (Smartflo) validation ────────────────────
+    if (provider === 'TataTele') {
+      if (!apiKey) {
+        return res.status(400).json({ error: 'Click-to-Call API Key is required for TataTele' });
+      }
+      if (!endpointUrl) {
+        return res.status(400).json({ error: 'Click-to-Call Endpoint URL is required for TataTele' });
+      }
+      if (!did) {
+        return res.status(400).json({ error: 'DID (phone number) is required for TataTele' });
+      }
+      // Mark as verified — we trust credentials since there is no dry-run token API
+      console.log('[VOIP] TataTele: credentials accepted (live validation on first call)');
+      isVerified = true;
+      didList    = [{ number: did, friendlyName: `Smartflo DID ${did}`, region: 'India', country: 'IN', capabilities: { voice: true } }];
+    }
+
     // ── Other provider validation ──────────────────────
     if (provider === 'Other') {
       if (!apiKey || !secretKey || !endpointUrl) {
@@ -419,12 +436,12 @@ const getVoipNumbers = async (req, res) => {
     // Fetch agent names for any assigned agent IDs
     const agentIds = [...new Set(numbers.map(n => n.assignedAgentId).filter(Boolean))];
     const agents   = agentIds.length
-      ? await Agent.find({ agentId: { $in: agentIds } }).lean()
+      ? await Agent.find({ _id: { $in: agentIds } }).lean()
       : [];
-    const agentMap = Object.fromEntries(agents.map(a => [a.agentId, a]));
+    const agentMap = Object.fromEntries(agents.map(a => [a._id.toString(), a]));
 
     const formatted = numbers.map((num) => {
-      const agentDoc = num.assignedAgentId ? agentMap[num.assignedAgentId] : null;
+      const agentDoc = num.assignedAgentId ? agentMap[num.assignedAgentId.toString()] : null;
       return {
         _id:          num._id,
         id:           num._id,

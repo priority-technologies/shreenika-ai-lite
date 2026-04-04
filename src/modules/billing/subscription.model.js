@@ -25,7 +25,7 @@ const PLANS = {
     agentLimit:         5,
     docLimit:           25,     // 5 docs per agent
     rechargeAllowed:    true,
-    rechargeRatePerMin: 5.50,   // INR per minute
+    rechargeRatePerMin: 2.25,   // INR per minute
     // Stripe Price IDs
     stripePriceMonthly: 'price_1TFdtwDWexfBYL7QczaduFpZ',
     stripePriceYearly:  'price_1TFdtwDWexfBYL7QlYaOV4VL',
@@ -39,7 +39,7 @@ const PLANS = {
     agentLimit:         99,
     docLimit:           990,    // 10 docs per agent
     rechargeAllowed:    true,
-    rechargeRatePerMin: 3.99,
+    rechargeRatePerMin: 2.25,
     // Stripe Price IDs
     stripePriceMonthly: 'price_1TFeQ5DWexfBYL7QVsH9moyj',
     stripePriceYearly:  'price_1TFeQ5DWexfBYL7QisLczbRp',

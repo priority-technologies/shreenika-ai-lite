@@ -61,6 +61,11 @@ const cacheService = require('./modules/voice/cache.service');
 const BillingService = require('./modules/billing/billing.service');
 const { requireMinutes, requireAgentSlot, requireDocSlot } = require('./modules/billing/plan-enforce.middleware');
 
+// Vector Cache Services (Vertex AI + MongoDB)
+const vertexAIEmbeddings = require('./services/vertex-ai-embeddings.service');
+const vectorCache = require('./services/vector-cache.service');
+const cacheQualityMonitor = require('./services/cache-quality-monitor.service');
+
 // Import Routes
 const passport          = require('passport');
 const { requireAuth, requireSuperAdmin } = require('./modules/auth/auth.middleware.js');
@@ -70,6 +75,7 @@ const campaignRoutes    = require('./modules/campaign/campaign.routes.js');
 const callRoutes        = require('./modules/call/call.routes.js');
 const twilioWebhook     = require('./modules/twilio/twilio.webhook.js');
 const { handleSansPBXStream } = require('./modules/call/sanspbx-stream.handler.js');
+const { handleTataTeleStream } = require('./modules/call/tatatele-stream.handler.js');
 const adminRoutes       = require('./modules/admin/admin.routes.js');
 const { recoverOnBoot } = require('./modules/campaign/campaign-worker.service.js');
 
@@ -124,6 +130,31 @@ app.use((req, res, next) => {
 app.use(passport.initialize());
 app.use('/auth', authRoutes);
 
+// 🔹 TEMPORARY LOCAL TESTING BYPASS (REMOVE BEFORE PRODUCTION)
+app.post('/auth/local-testing', async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({ message: 'Not available in production' });
+    }
+    const User = require('./modules/auth/user.model.js');
+    const bcrypt = require('bcryptjs');
+    const jwt = require('jsonwebtoken');
+    const testEmail = 'test@local.shreenika';
+    let user = await User.findOne({ email: testEmail });
+    if (!user) {
+      user = await User.create({
+        email: testEmail, name: 'Test User',
+        password: await bcrypt.hash('test123456', 10),
+        role: 'user', emailVerified: true, isActive: true
+      });
+    }
+    const token = jwt.sign({ id: user._id.toString(), role: user.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ token, user: { id: user._id.toString(), name: user.name, email: user.email, role: user.role } });
+  } catch (err) {
+    return res.status(500).json({ message: 'Local testing failed: ' + err.message });
+  }
+});
+
 // ============================================================
 // VOIP ROUTES
 // ============================================================
@@ -150,6 +181,45 @@ app.use('/twilio', twilioWebhook);
 // ============================================================
 // SANSPBX WEBHOOKS  (no auth — SansPBX cannot send JWT tokens)
 // ============================================================
+
+// ============================================================
+// TATA TELE (SMARTFLO) WEBHOOKS
+// ============================================================
+
+// POST /tatatele/status — Smartflo call status webhook
+app.post('/tatatele/status', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const { callSid, call_sid, callid, status, duration } = req.body;
+    const tataTeleCallId = callSid || call_sid || callid;
+    if (!tataTeleCallId) return;
+
+    const statusMap = {
+      ringing:    'RINGING',
+      answered:   'ANSWERED',
+      completed:  'COMPLETED',
+      failed:     'FAILED',
+      'no-answer':'NO_ANSWER',
+      busy:       'FAILED',
+    };
+
+    const normalizedStatus = statusMap[status?.toLowerCase()] || status?.toUpperCase() || 'UNKNOWN';
+    logger.info(`[TATATELE/STATUS] callId=${tataTeleCallId} status=${normalizedStatus} duration=${duration}s`);
+
+    const Call = require('./modules/call/call.model');
+    await Call.findOneAndUpdate(
+      { providerCallId: tataTeleCallId },
+      {
+        status:          normalizedStatus,
+        durationSeconds: Number(duration) || 0,
+        ...(normalizedStatus === 'COMPLETED' ? { endedAt: new Date() }    : {}),
+        ...(normalizedStatus === 'ANSWERED'  ? { answeredAt: new Date() } : {}),
+      }
+    );
+  } catch (e) {
+    logger.error('[TATATELE/STATUS] Error:', e.message);
+  }
+});
 
 // POST /sanspbx/status — SansPBX call status webhook (ringing, answered, completed, failed)
 app.post('/sanspbx/status', async (req, res) => {
@@ -613,7 +683,12 @@ app.post('/api/contacts/import', requireAuth, upload.single('file'), async (req,
     const rows    = parseContactFile(req.file.buffer, req.file.mimetype, req.file.originalname);
     const ext     = (req.file.originalname || '').split('.').pop().toLowerCase();
     const source  = ext === 'csv' ? 'csv' : 'excel';
-    const payload = rows.map(rowToContact).filter(r => r.firstName || r.phone);
+    const agentId = req.body.agentId || null;
+    const payload = rows.map(r => {
+      const c = rowToContact(r);
+      if (agentId) c.agentId = agentId;
+      return c;
+    }).filter(r => r.firstName || r.phone);
 
     if (payload.length === 0) {
       return res.status(400).json({ success: false, message: 'No valid rows found in file. Check column headers.' });
@@ -1143,6 +1218,36 @@ app.post('/api/billing/recharge', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/billing/recharge-checkout — Stripe checkout session for minute recharge
+app.post('/api/billing/recharge-checkout', requireAuth, async (req, res) => {
+  try {
+    const { minutes } = req.body;
+    if (!minutes || minutes < 100) return res.status(400).json({ message: 'Minimum recharge is 100 minutes' });
+    const user = await require('./modules/auth/user.model.js').findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const result = await BillingService.createRechargeCheckoutSession(req.user.id, user.email, user.name, { minutes, frontendUrl });
+    res.json(result);
+  } catch (err) {
+    logger.error('[BILLING] recharge-checkout error:', err.message);
+    res.status(400).json({ message: err.message });
+  }
+});
+
+// POST /api/billing/addon-checkout — Stripe checkout for document addon (10 docs ₹830)
+app.post('/api/billing/addon-checkout', requireAuth, async (req, res) => {
+  try {
+    const user = await require('./modules/auth/user.model.js').findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const result = await BillingService.createAddonCheckoutSession(req.user.id, user.email, user.name, { frontendUrl });
+    res.json(result);
+  } catch (err) {
+    logger.error('[BILLING] addon-checkout error:', err.message);
+    res.status(400).json({ message: err.message });
+  }
+});
+
 // POST /api/billing/webhook — Stripe webhook (raw body required)
 app.post('/api/billing/webhook',
   express.raw({ type: 'application/json' }),
@@ -1333,6 +1438,7 @@ wss.on('connection', async (clientWs, req) => {
   let fillerTimer        = null;
   let silenceTimer       = null;   // disconnect if human is silent for endCallOnSilence ms
   let endCallScheduled   = false;
+  let testKeepAlive      = null;   // keepalive interval for test sessions only
   let billingDeducted    = false;  // guard — prevent double billing on end_call + close
   const callStartTime    = Date.now();
   const agentLanguage    = agent.language || agent.primaryLanguage || 'en-IN';
@@ -1358,9 +1464,10 @@ wss.on('connection', async (clientWs, req) => {
   liveSttService.start();
 
   function cleanup() {
-    if (durationTimer) { clearTimeout(durationTimer); durationTimer = null; }
-    if (fillerTimer)   { clearTimeout(fillerTimer);   fillerTimer   = null; }
-    if (silenceTimer)  { clearTimeout(silenceTimer);  silenceTimer  = null; }
+    if (durationTimer)  { clearTimeout(durationTimer);   durationTimer  = null; }
+    if (fillerTimer)    { clearTimeout(fillerTimer);     fillerTimer    = null; }
+    if (silenceTimer)   { clearTimeout(silenceTimer);    silenceTimer   = null; }
+    if (testKeepAlive)  { clearInterval(testKeepAlive);  testKeepAlive  = null; }
     liveSttService.destroy();
   }
 
@@ -1518,6 +1625,22 @@ wss.on('connection', async (clientWs, req) => {
           // The timer will start naturally on the first audio chunk from the browser.
           if (!isTestSession) {
             resetSilenceTimer();
+          } else {
+            // TEST SESSION KEEPALIVE: send silence every 8s to prevent Gemini timeout
+            // while user is reading/typing between turns.
+            testKeepAlive = setInterval(() => {
+              if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                const silence = Buffer.alloc(320, 0).toString('base64'); // 10ms silence @ 16kHz
+                geminiWs.send(JSON.stringify({
+                  realtimeInput: {
+                    mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: silence }]
+                  }
+                }));
+              } else {
+                clearInterval(testKeepAlive);
+                testKeepAlive = null;
+              }
+            }, 8000);
           }
 
           // Notify frontend — session is ready
@@ -1597,6 +1720,15 @@ wss.on('connection', async (clientWs, req) => {
                   }));
                 }
                 endCallScheduled = false; // reset so it can be called again later
+                // Re-engage Gemini so it doesn't close the session after rejection
+                if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
+                  geminiWs.send(JSON.stringify({
+                    clientContent: {
+                      turns: [{ role: 'user', parts: [{ text: 'SYSTEM: The conversation is still in progress. Please continue engaging the caller — ask relevant follow-up questions and keep the dialogue going.' }] }],
+                      turnComplete: true
+                    }
+                  }));
+                }
                 return; // skip end_call processing
               }
 
@@ -1744,19 +1876,27 @@ wss.on('connection', async (clientWs, req) => {
 
         if (msg.type === 'audio' || msg.type === 'AUDIO') {
           // Microphone PCM audio — base64-encoded
-          // TestAgentModal sends { type: 'AUDIO', audio, sampleRate }
-          // talk-to-agent.html sends { type: 'audio', data }
+          // TestAgentModal sends { type: 'AUDIO', audio, sampleRate: 48000 }
+          // Gemini Live ONLY accepts audio/pcm;rate=16000 — must downsample if needed
           const audioData  = msg.audio || msg.data;
           const sampleRate = msg.sampleRate || 16000;
+
+          let geminiAudio = audioData;
+          if (sampleRate !== 16000 && audioData) {
+            const pcmBuf    = Buffer.from(audioData, 'base64');
+            const resampled = downsampleTo16k(pcmBuf, sampleRate);
+            geminiAudio     = resampled.toString('base64');
+          }
+
           geminiWs.send(JSON.stringify({
             realtimeInput: {
-              mediaChunks: [{ mimeType: `audio/pcm;rate=${sampleRate}`, data: audioData }]
+              mediaChunks: [{ mimeType: 'audio/pcm;rate=16000', data: geminiAudio }]
             }
           }));
 
-          // STT side-channel — only feed 16kHz audio (STT requires 16kHz LINEAR16)
-          if (sampleRate === 16000 && audioData) {
-            liveSttService.write(Buffer.from(audioData, 'base64'));
+          // STT side-channel — feed 16kHz audio (already 16kHz after downsample)
+          if (geminiAudio) {
+            liveSttService.write(Buffer.from(geminiAudio, 'base64'));
           }
 
           // Reset filler timer on each audio chunk — 800ms after last user audio chunk
@@ -1912,8 +2052,78 @@ function downsample24to8(buf) {
   return out;
 }
 
+// ── MISSING FIX #1: Downsample PCM 24kHz → 16kHz (for Google STT) ──
+// Gemini sends 24kHz, Google STT requires 16kHz
+// Downsample by averaging: 24/16 = 1.5x, so take every 1.5th sample (round-robin)
+function downsample24to16(buf) {
+  const n24 = buf.length / 2;
+  const n16 = Math.floor(n24 * 16 / 24); // 24kHz → 16kHz conversion
+  const out = Buffer.alloc(n16 * 2);
+  for (let i = 0; i < n16; i++) {
+    const srcIdx = Math.floor(i * 24 / 16);
+    if (srcIdx * 2 < buf.length) {
+      const sample = buf.readInt16LE(srcIdx * 2);
+      out.writeInt16LE(sample, i * 2);
+    }
+  }
+  return out;
+}
+
+// Downsample PCM from any rate → 16kHz (nearest-neighbour, for Gemini input)
+// Gemini Live API only accepts audio/pcm;rate=16000 — browser mic sends 48kHz
+function downsampleTo16k(buf, fromRate) {
+  if (fromRate === 16000) return buf;
+  const inputSamples  = buf.length / 2;
+  const outputSamples = Math.floor(inputSamples * 16000 / fromRate);
+  const out = Buffer.alloc(outputSamples * 2);
+  for (let i = 0; i < outputSamples; i++) {
+    const srcIdx = Math.min(Math.floor(i * fromRate / 16000), inputSamples - 1);
+    out.writeInt16LE(buf.readInt16LE(srcIdx * 2), i * 2);
+  }
+  return out;
+}
+
+// ── MISSING FIX #2: Save Gemini audio to Google Cloud Storage ──
+// Used by both Twilio and SansPBX for full-duplex call recording
+async function saveGeminiAudioToGCS(audioBuffer, { userId, callId, agentId }) {
+  try {
+    if (!audioBuffer || audioBuffer.length === 0) {
+      logger.warn('[GCS] No audio to save for callId:', callId);
+      return null;
+    }
+
+    const { Storage } = require('@google-cloud/storage');
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'gen-lang-client-0348687456';
+    const bucketName = process.env.AUDIO_CACHE_BUCKET || 'shreenika-ai-audio-cache';
+
+    const gcsClient = new Storage({ projectId });
+    const bucket = gcsClient.bucket(bucketName);
+
+    // Path: gs://bucket/calls/{userId}/{callId}_gemini.pcm
+    const fileName = `calls/${userId}/${callId}_gemini.pcm`;
+    const file = bucket.file(fileName);
+
+    await file.save(audioBuffer, { resumable: false });
+
+    const gcsPath = `gs://${bucketName}/${fileName}`;
+    logger.info('[GCS] ✅ Saved Gemini audio:', gcsPath, '| size:', audioBuffer.length, 'bytes');
+
+    return {
+      gcsPath,
+      fileName,
+      sizeBytes: audioBuffer.length,
+      audioLengthMs: Math.round((audioBuffer.length / 32000) * 1000), // 16kHz PCM
+      uploadedAt: new Date(),
+    };
+  } catch (error) {
+    logger.error('[GCS] Error saving Gemini audio:', error.message);
+    return null;
+  }
+}
+
 const wssTwilio    = new WebSocket.Server({ noServer: true, perMessageDeflate: { threshold: Infinity } });
 const wssSansPBX   = new WebSocket.Server({ noServer: true, perMessageDeflate: { threshold: Infinity } });
+const wssTataTele  = new WebSocket.Server({ noServer: true, perMessageDeflate: { threshold: Infinity } });
 
 // Single upgrade router — only the matching server handles each request.
 // This prevents the non-matching server from calling abortHandshake(400)
@@ -1926,9 +2136,18 @@ server.on('upgrade', (req, socket, head) => {
     wssTwilio.handleUpgrade(req, socket, head, (ws) => wssTwilio.emit('connection', ws, req));
   } else if (pathname === '/sanspbx-stream') {
     wssSansPBX.handleUpgrade(req, socket, head, (ws) => wssSansPBX.emit('connection', ws, req));
+  } else if (pathname === '/tatatele-stream') {
+    wssTataTele.handleUpgrade(req, socket, head, (ws) => wssTataTele.emit('connection', ws, req));
   } else {
     socket.destroy();
   }
+});
+
+// TataTele WebSocket connection handler
+wssTataTele.on('connection', (tataTeleWs, req) => {
+  handleTataTeleStream(tataTeleWs, req).catch(err =>
+    logger.error('[TATATELE-STREAM] Unhandled error:', err.message)
+  );
 });
 
 // SansPBX WebSocket connection handler
@@ -1971,8 +2190,8 @@ wssTwilio.on('connection', async (twilioWs, req) => {
             clearTimeout(timeout);
             twilioWs.removeListener('message', onStart);
 
-            streamSid = m.streamSid || (m.start && m.start.streamSid);
-            callSid   = (m.start && m.start.callSid) || null;
+            streamSid = m.streamSid;
+            callSid   = m.start?.callSid || m.callSid || null;
             console.log('[TWILIO-STREAM] start received — callSid:', callSid, '| streamSid:', streamSid);
 
             const meta = streamMeta.get(callSid);
@@ -2086,6 +2305,10 @@ wssTwilio.on('connection', async (twilioWs, req) => {
   let   geminiSecondsUsed = 0;         // gemini seconds used this call (for billing)
   let   turnStartTime  = 0;            // when current Gemini turn started
 
+  // ── MISSING FIX #3: Twilio Call Recording state ──
+  let   callerAudioChunks = [];        // collect all caller audio (mulaw 8kHz)
+  let   geminiAudioChunks = [];        // collect all Gemini audio (24kHz PCM)
+
   // NOTE: Filler injection is intentionally disabled for the Twilio pipeline.
   // Twilio sends 50 frames/sec continuously (including silence), making event-based
   // filler timers impossible to control — they always fire in a loop.
@@ -2108,8 +2331,74 @@ wssTwilio.on('connection', async (twilioWs, req) => {
     transcriptParts.push({ speaker: 'Human', text });
     logger.info('[TWILIO-STREAM] [STT] Human:', text.substring(0, 80));
 
-    // Cache lookup — check if we have a pre-recorded response for this phrase
+    // ── VECTOR CACHE LOOKUP: Tier 1 + Tier 2 with Vertex AI embeddings ──
     if (cacheUserId && cacheAgentId) {
+      (async () => {
+        try {
+          // Step 1: Generate embedding using Vertex AI text-embedding-004
+          const embedding = await vertexAIEmbeddings.generateEmbedding(text, 'QUESTION_ANSWERING');
+
+          if (!embedding) {
+            logger.warn('[VECTOR-CACHE] Failed to generate embedding, falling back to Gemini');
+            return;
+          }
+
+          // Step 2: Try Tier 1 lookup (Production phase, confidence >= 0.90)
+          const tier1Result = await vectorCache.tierOneLookup(embedding, cacheAgentId);
+
+          if (tier1Result) {
+            logger.info(`[VECTOR-CACHE] ✅ TIER 1 HIT: ${text.substring(0, 50)} (confidence: ${tier1Result.confidenceScore.toFixed(3)})`);
+            const durationMs = tier1Result.audioLengthMs || 3000;
+            cacheSecondsUsed += Math.ceil(durationMs / 1000);
+
+            // Download audio from GCS and send to Twilio
+            try {
+              const { Storage } = require('@google-cloud/storage');
+              const gcsClient = new Storage({ projectId: process.env.GOOGLE_CLOUD_PROJECT_ID });
+              const bucket = gcsClient.bucket(process.env.AUDIO_CACHE_BUCKET || 'shreenika-ai-audio-cache');
+              const file = bucket.file(tier1Result.audioPath.replace('gs://shreenika-ai-audio-cache/', ''));
+              const [audioBuffer] = await file.download();
+              sendAudioToTwilio(audioBuffer.toString('base64'));
+            } catch (gcsErr) {
+              logger.error('[VECTOR-CACHE] GCS download error:', gcsErr.message);
+            }
+            return;
+          }
+
+          // Step 3: Try Tier 2 lookup (Validation phase, confidence >= 0.75)
+          const tier2Result = await vectorCache.tierTwoLookup(embedding, cacheAgentId);
+
+          if (tier2Result) {
+            logger.info(`[VECTOR-CACHE] ✅ TIER 2 HIT: ${text.substring(0, 50)} (phase: ${tier2Result.phase})`);
+            const durationMs = tier2Result.audioLengthMs || 3000;
+            cacheSecondsUsed += Math.ceil(durationMs / 1000);
+
+            // Download audio from GCS and send to Twilio
+            try {
+              const { Storage } = require('@google-cloud/storage');
+              const gcsClient = new Storage({ projectId: process.env.GOOGLE_CLOUD_PROJECT_ID });
+              const bucket = gcsClient.bucket(process.env.AUDIO_CACHE_BUCKET || 'shreenika-ai-audio-cache');
+              const file = bucket.file(tier2Result.audioPath.replace('gs://shreenika-ai-audio-cache/', ''));
+              const [audioBuffer] = await file.download();
+              sendAudioToTwilio(audioBuffer.toString('base64'));
+            } catch (gcsErr) {
+              logger.error('[VECTOR-CACHE] GCS download error:', gcsErr.message);
+            }
+            return;
+          }
+
+          // Step 4: Cache miss - will call Gemini (handled by existing code below)
+          logger.info(`[VECTOR-CACHE] ❌ MISS: ${text.substring(0, 50)} - falling back to Gemini`);
+
+        } catch (err) {
+          logger.error('[VECTOR-CACHE] Lookup error:', err.message);
+          // Continue to Gemini call on error
+        }
+      })();
+    }
+
+    // Fallback: Also try old AudioCacheService for backward compatibility
+    if (cacheUserId && cacheAgentId && false) { // Disabled - using new vector cache only
       AudioCacheService.lookup(text, { agentId: cacheAgentId, userId: cacheUserId })
         .then(result => {
           if (result.hit && result.audioBuffer) {
@@ -2121,6 +2410,7 @@ wssTwilio.on('connection', async (twilioWs, req) => {
         })
         .catch(err => logger.error('[AUDIO-CACHE] lookup error:', err.message));
     }
+
     pendingAudioChunks = [];
     turnStartTime = Date.now();
   });
@@ -2168,9 +2458,48 @@ wssTwilio.on('connection', async (twilioWs, req) => {
     billingDeducted = true;
     if (!liveCallDocId) return;
     try {
+      // ── MISSING FIX #3: Save Twilio call recording to GCS ──
+      let recordingMeta = null;
+      if (cacheUserId && callSid) {
+        try {
+          const { Storage } = require('@google-cloud/storage');
+          const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID || 'gen-lang-client-0348687456';
+          const bucketName = process.env.AUDIO_CACHE_BUCKET || 'shreenika-ai-audio-cache';
+          const gcsClient = new Storage({ projectId });
+          const bucket = gcsClient.bucket(bucketName);
+
+          // Save caller audio (mulaw 8kHz)
+          let callerGcsPath = null;
+          if (callerAudioChunks.length > 0) {
+            const callerAudio = Buffer.concat(callerAudioChunks);
+            const callerFileName = `calls/${cacheUserId}/${callSid}_caller.pcm`;
+            const callerFile = bucket.file(callerFileName);
+            await callerFile.save(callerAudio, { resumable: false });
+            callerGcsPath = `gs://${bucketName}/${callerFileName}`;
+            logger.info('[TWILIO-STREAM] [RECORDING] ✅ Saved caller audio:', callerGcsPath);
+          }
+
+          // Save Gemini audio (24kHz → 16kHz)
+          let geminiGcsPath = null;
+          if (geminiAudioChunks.length > 0) {
+            const geminiAudio24 = Buffer.concat(geminiAudioChunks);
+            const geminiAudio16 = downsample24to16(geminiAudio24);
+            const geminiFileName = `calls/${cacheUserId}/${callSid}_gemini.pcm`;
+            const geminiFile = bucket.file(geminiFileName);
+            await geminiFile.save(geminiAudio16, { resumable: false });
+            geminiGcsPath = `gs://${bucketName}/${geminiFileName}`;
+            logger.info('[TWILIO-STREAM] [RECORDING] ✅ Saved Gemini audio:', geminiGcsPath);
+          }
+
+          recordingMeta = { callerRecordingPath: callerGcsPath, geminiRecordingPath: geminiGcsPath };
+        } catch (recordErr) {
+          logger.error('[TWILIO-STREAM] [RECORDING] Error saving call recording:', recordErr.message);
+        }
+      }
+
       const Call = require('./modules/call/call.model.js');
       const transcriptText = transcriptParts.map(p => `${p.speaker}: ${p.text}`).join('\n');
-      await Call.findByIdAndUpdate(liveCallDocId, {
+      const updateData = {
         durationSeconds:  durationSec,
         status:           'COMPLETED',
         endedAt:          new Date(),
@@ -2178,7 +2507,13 @@ wssTwilio.on('connection', async (twilioWs, req) => {
         transcriptStatus: 'completed',
         sentiment:        sentiment ? (sentiment.charAt(0).toUpperCase() + sentiment.slice(1)) : 'Neutral',
         ...(summary ? { summary } : {}),
-      });
+      };
+
+      // ── MISSING FIX #3: Store recording paths in Call database ──
+      if (recordingMeta?.callerRecordingPath) updateData.recordingPath = recordingMeta.callerRecordingPath;
+      if (recordingMeta?.geminiRecordingPath) updateData.geminiRecordingPath = recordingMeta.geminiRecordingPath;
+
+      await Call.findByIdAndUpdate(liveCallDocId, updateData);
       logger.info('[TWILIO-STREAM] Saved call to DB:', liveCallDocId);
     } catch (e) {
       logger.error('[TWILIO-STREAM] DB save error:', e.message);
@@ -2432,7 +2767,20 @@ wssTwilio.on('connection', async (twilioWs, req) => {
             if (part.inlineData && part.inlineData.data) {
               sendAudioToTwilio(part.inlineData.data);
               // Collect audio chunks for cache recording after turn ends
-              pendingAudioChunks.push(Buffer.from(part.inlineData.data, 'base64'));
+              const pcm24 = Buffer.from(part.inlineData.data, 'base64');
+              pendingAudioChunks.push(pcm24);
+              geminiAudioChunks.push(pcm24);  // ── MISSING FIX #3: Collect for call recording ──
+
+              // ── MISSING FIX #3: Feed Gemini audio to Google STT (24kHz → 16kHz) ──
+              try {
+                const pcm16 = downsample24to16(pcm24);
+                if (sttService && pcm16.length > 0) {
+                  sttService.write(pcm16);
+                  logger.debug('[TWILIO-STREAM] [STT] Fed Gemini audio to STT for bidirectional transcription');
+                }
+              } catch (err) {
+                logger.error('[TWILIO-STREAM] [STT] Error feeding Gemini audio to STT:', err.message);
+              }
             }
             // Capture Gemini text output as Agent transcript (sent alongside audio in v1beta1)
             if (part.text && part.text.trim()) {
@@ -2527,6 +2875,9 @@ wssTwilio.on('connection', async (twilioWs, req) => {
         const mulaw  = Buffer.from(mulawB64, 'base64');
         const pcm8   = mulawToPcm(mulaw);
         const pcm16  = upsample8to16(pcm8);
+
+        // ── MISSING FIX #3: Collect caller audio for recording ──
+        callerAudioChunks.push(pcm8);
 
         // Mark that real human audio has arrived — unlocks Gemini to respond
         if (!humanHasSpoken) {

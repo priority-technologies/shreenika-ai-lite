@@ -36,6 +36,7 @@ const ContactSchema = new mongoose.Schema(
     notes:     { type: String, default: '' },
 
     lastContactedAt: { type: String, default: null },
+    agentId: { type: String, default: null, index: true },  // assigned AI agent
   },
   {
     timestamps: true,   // createdAt / updatedAt auto-managed

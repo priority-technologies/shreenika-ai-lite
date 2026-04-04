@@ -19,7 +19,7 @@ const voipProviderSchema = new mongoose.Schema(
     provider: {
       type: String,
       required: true,
-      enum: ['Twilio', 'SansPBX', 'BlandAI', 'Vapi', 'Vonage', 'Other'],
+      enum: ['Twilio', 'SansPBX', 'TataTele', 'BlandAI', 'Vapi', 'Vonage', 'Other'],
     },
 
     // All credential fields — encrypted before save, decrypted on demand

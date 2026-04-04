@@ -8,6 +8,7 @@ const {
   archiveCall,
   redialCall,
   getCallStats,
+  getCallRecording,
 } = require('./call.controller.js');
 
 const router = express.Router();
@@ -23,5 +24,6 @@ router.put('/:id',          updateCall);
 // Actions
 router.post('/:id/archive', archiveCall);
 router.post('/:id/redial',  redialCall);
+router.get('/:id/recording', getCallRecording);  // ── MISSING FIX #4: Recording endpoint ──
 
 module.exports = router;

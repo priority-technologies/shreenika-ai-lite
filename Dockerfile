@@ -10,7 +10,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm install --omit=dev --ignore-scripts
 
 # Stage 2: Production image
 FROM node:18-alpine
@@ -26,6 +26,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy application code
 COPY src ./src
 COPY package*.json ./
+
+# Copy Google service account credentials
+COPY gen-lang-client-0348687456-d60e2a0118cb.json /app/service-account.json
 
 # Create logs directory
 RUN mkdir -p logs
